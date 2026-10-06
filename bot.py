@@ -1,4 +1,3 @@
-```python
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -186,5 +185,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
-
