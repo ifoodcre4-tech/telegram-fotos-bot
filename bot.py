@@ -555,8 +555,27 @@ async def ajuda(update, context):
         "ℹ️ *Comandos disponíveis:*\n\n"
         "/start — Iniciar\n"
         "/produtos — Ver produtos\n"
-        "/ajuda — Ajuda",
+        "/ajuda — Ajuda\n"
+        "/id — Ver ID do grupo",
         parse_mode="Markdown",
+    )
+
+
+# =========================
+# ID DO GRUPO VIP
+# =========================
+
+async def id_grupo(update, context):
+
+    chat = update.effective_chat
+
+    await update.message.reply_text(
+        f"🆔 ID deste grupo:\n\n{chat.id}"
+    )
+
+    print(
+        "ID DO GRUPO VIP:",
+        chat.id
     )
 
 
@@ -599,6 +618,14 @@ def main():
         CommandHandler("ajuda", ajuda)
     )
 
+    # =========================
+    # COMANDO /ID
+    # =========================
+
+    app.add_handler(
+        CommandHandler("id", id_grupo)
+    )
+
     app.add_handler(
         CallbackQueryHandler(
             produtos,
@@ -629,3 +656,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
