@@ -4,15 +4,25 @@ import json
 import uuid
 import urllib.request
 import urllib.error
+import re
+
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
+
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
+    MessageHandler,
     ContextTypes,
+    filters,
 )
+
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 MP_TOKEN = os.getenv("MERCADOPAGO_ACCESS_TOKEN")
@@ -21,17 +31,20 @@ PORT = int(os.getenv("PORT", "10000"))
 VALOR = "29.99"
 PRODUTO = "Pacote de fotos"
 
+
 # =========================
 # GRUPO VIP
 # =========================
 
 ID_GRUPO_VIP = -5328427809
 
+
 # =========================
 # MERCADO PAGO
 # =========================
 
-def criar_pix(chat_id):
+def criar_pix(chat_id, email):
+
     url = "https://api.mercadopago.com/v1/orders"
 
     external_reference = (
@@ -43,17 +56,22 @@ def criar_pix(chat_id):
 
     dados = {
         "type": "online",
+
         "external_reference": external_reference,
+
         "total_amount": VALOR,
+
         "processing_mode": "automatic",
+
         "payer": {
-            "email": "test_user_br@testuser.com",
-            "first_name": "APRO"
+            "email": email
         },
+
         "transactions": {
             "payments": [
                 {
                     "amount": VALOR,
+
                     "payment_method": {
                         "id": "pix",
                         "type": "bank_transfer"
@@ -63,50 +81,81 @@ def criar_pix(chat_id):
         }
     }
 
-    dados_json = json.dumps(dados).encode("utf-8")
+    dados_json = json.dumps(
+        dados
+    ).encode("utf-8")
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": "Bearer " + MP_TOKEN,
-        "X-Idempotency-Key": str(uuid.uuid4())
+
+        "Authorization":
+            "Bearer " + MP_TOKEN,
+
+        "X-Idempotency-Key":
+            str(uuid.uuid4())
     }
 
     requisicao = urllib.request.Request(
         url,
+
         data=dados_json,
+
         headers=headers,
+
         method="POST"
     )
 
     try:
+
         with urllib.request.urlopen(
             requisicao,
             timeout=30
         ) as resposta:
 
-            conteudo = resposta.read().decode("utf-8")
-            return json.loads(conteudo)
+            conteudo = (
+                resposta
+                .read()
+                .decode("utf-8")
+            )
+
+            return json.loads(
+                conteudo
+            )
 
     except urllib.error.HTTPError as erro:
-        corpo = erro.read().decode("utf-8")
+
+        corpo = (
+            erro
+            .read()
+            .decode("utf-8")
+        )
+
         raise Exception(
             f"Mercado Pago HTTP {erro.code}: {corpo}"
         )
 
 
+# =========================
+# CONSULTAR ORDER
+# =========================
+
 def consultar_order(order_id):
+
     url = (
         "https://api.mercadopago.com/v1/orders/"
         + str(order_id)
     )
 
     headers = {
-        "Authorization": "Bearer " + MP_TOKEN
+        "Authorization":
+            "Bearer " + MP_TOKEN
     }
 
     requisicao = urllib.request.Request(
         url,
+
         headers=headers,
+
         method="GET"
     )
 
@@ -115,15 +164,26 @@ def consultar_order(order_id):
         timeout=30
     ) as resposta:
 
-        conteudo = resposta.read().decode("utf-8")
-        return json.loads(conteudo)
+        conteudo = (
+            resposta
+            .read()
+            .decode("utf-8")
+        )
+
+        return json.loads(
+            conteudo
+        )
 
 
 # =========================
 # TELEGRAM VIA API
 # =========================
 
-def enviar_telegram(chat_id, mensagem):
+def enviar_telegram(
+    chat_id,
+    mensagem
+):
+
     url = (
         "https://api.telegram.org/bot"
         + TOKEN
@@ -135,14 +195,20 @@ def enviar_telegram(chat_id, mensagem):
         "text": mensagem
     }
 
-    dados_json = json.dumps(dados).encode("utf-8")
+    dados_json = json.dumps(
+        dados
+    ).encode("utf-8")
 
     requisicao = urllib.request.Request(
         url,
+
         data=dados_json,
+
         headers={
-            "Content-Type": "application/json"
+            "Content-Type":
+                "application/json"
         },
+
         method="POST"
     )
 
@@ -167,19 +233,30 @@ def criar_convite_vip():
     )
 
     dados = {
-        "chat_id": ID_GRUPO_VIP,
-        "member_limit": 1,
-        "name": "Convite VIP"
+        "chat_id":
+            ID_GRUPO_VIP,
+
+        "member_limit":
+            1,
+
+        "name":
+            "Convite VIP"
     }
 
-    dados_json = json.dumps(dados).encode("utf-8")
+    dados_json = json.dumps(
+        dados
+    ).encode("utf-8")
 
     requisicao = urllib.request.Request(
         url,
+
         data=dados_json,
+
         headers={
-            "Content-Type": "application/json"
+            "Content-Type":
+                "application/json"
         },
+
         method="POST"
     )
 
@@ -189,16 +266,23 @@ def criar_convite_vip():
     ) as resposta:
 
         resultado = json.loads(
-            resposta.read().decode("utf-8")
+            resposta
+            .read()
+            .decode("utf-8")
         )
 
     if not resultado.get("ok"):
+
         raise Exception(
             "Erro ao criar convite VIP: "
             + str(resultado)
         )
 
-    return resultado["result"]["invite_link"]
+    return resultado[
+        "result"
+    ][
+        "invite_link"
+    ]
 
 
 # =========================
@@ -209,32 +293,49 @@ def processar_webhook(dados):
 
     try:
 
-        data = dados.get("data", {})
-        order_id = data.get("id")
+        data = dados.get(
+            "data",
+            {}
+        )
+
+        order_id = data.get(
+            "id"
+        )
 
         if not order_id:
             return
 
-        order = consultar_order(order_id)
+        order = consultar_order(
+            order_id
+        )
 
-        status = order.get("status")
+        status = order.get(
+            "status"
+        )
 
         if status != "processed":
+
             return
 
-        external_reference = order.get(
-            "external_reference",
-            ""
+        external_reference = (
+            order.get(
+                "external_reference",
+                ""
+            )
         )
 
         if not external_reference.startswith(
             "telegram_"
         ):
+
             return
 
-        partes = external_reference.split("_")
+        partes = external_reference.split(
+            "_"
+        )
 
         if len(partes) < 2:
+
             return
 
         chat_id = partes[1]
@@ -243,11 +344,17 @@ def processar_webhook(dados):
 
         mensagem = (
             "✅ PAGAMENTO CONFIRMADO!\n\n"
+
             "📸 Produto: Pacote de fotos\n"
             "💰 Valor: R$ 29,99\n\n"
+
             "🎉 Seu pagamento foi aprovado!\n\n"
-            "🔐 Seu acesso ao Grupo VIP está liberado.\n\n"
-            "👇 Clique no botão abaixo para entrar:"
+
+            "🔐 Seu acesso ao Grupo VIP "
+            "está liberado.\n\n"
+
+            "👇 Clique no botão abaixo "
+            "para entrar:"
         )
 
         url = (
@@ -257,18 +364,33 @@ def processar_webhook(dados):
         )
 
         dados_mensagem = {
-            "chat_id": chat_id,
-            "text": mensagem,
+
+            "chat_id":
+                chat_id,
+
+            "text":
+                mensagem,
+
             "reply_markup": {
+
                 "inline_keyboard": [
+
                     [
+
                         {
-                            "text": "🔐 ENTRAR NO GRUPO VIP",
-                            "url": convite_vip
+                            "text":
+                                "🔐 ENTRAR NO GRUPO VIP",
+
+                            "url":
+                                convite_vip
                         }
+
                     ]
+
                 ]
+
             }
+
         }
 
         dados_json = json.dumps(
@@ -277,10 +399,14 @@ def processar_webhook(dados):
 
         requisicao = urllib.request.Request(
             url,
+
             data=dados_json,
+
             headers={
-                "Content-Type": "application/json"
+                "Content-Type":
+                    "application/json"
             },
+
             method="POST"
         )
 
@@ -321,7 +447,9 @@ class HealthHandler(
 
     def do_GET(self):
 
-        self.send_response(200)
+        self.send_response(
+            200
+        )
 
         self.send_header(
             "Content-Type",
@@ -333,6 +461,7 @@ class HealthHandler(
         self.wfile.write(
             b"Bot online"
         )
+
 
     def do_POST(self):
 
@@ -354,7 +483,8 @@ class HealthHandler(
             try:
 
                 dados = json.loads(
-                    corpo.decode("utf-8")
+                    corpo
+                    .decode("utf-8")
                 )
 
                 threading.Thread(
@@ -370,7 +500,10 @@ class HealthHandler(
                     erro
                 )
 
-            self.send_response(200)
+            self.send_response(
+                200
+            )
+
             self.end_headers()
 
             self.wfile.write(
@@ -379,14 +512,19 @@ class HealthHandler(
 
             return
 
-        self.send_response(404)
+        self.send_response(
+            404
+        )
+
         self.end_headers()
+
 
     def log_message(
         self,
         format,
         *args
     ):
+
         pass
 
 
@@ -410,18 +548,25 @@ async def start(
 ):
 
     keyboard = [[
+
         InlineKeyboardButton(
             "🛍️ Ver produtos",
             callback_data="produtos"
         )
+
     ]]
 
     await update.message.reply_text(
+
         "👋 Olá! Bem-vindo à nossa loja!\n\n"
-        "Clique abaixo para ver o produto disponível:",
-        reply_markup=InlineKeyboardMarkup(
-            keyboard
-        ),
+
+        "Clique abaixo para ver "
+        "o produto disponível:",
+
+        reply_markup=
+            InlineKeyboardMarkup(
+                keyboard
+            ),
     )
 
 
@@ -435,17 +580,24 @@ async def produtos(
 ):
 
     keyboard = [[
+
         InlineKeyboardButton(
             "🛒 Comprar — R$ 29,99",
             callback_data="comprar"
         )
+
     ]]
 
     mensagem = (
+
         "🛍️ *Produto disponível*\n\n"
+
         "📸 Pacote de fotos\n"
+
         "💰 Valor: *R$ 29,99*\n\n"
-        "Clique no botão abaixo para comprar."
+
+        "Clique no botão abaixo "
+        "para comprar."
     )
 
     if update.callback_query:
@@ -453,21 +605,29 @@ async def produtos(
         await update.callback_query.answer()
 
         await update.callback_query.edit_message_text(
+
             mensagem,
+
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(
-                keyboard
-            ),
+
+            reply_markup=
+                InlineKeyboardMarkup(
+                    keyboard
+                ),
         )
 
     else:
 
         await update.message.reply_text(
+
             mensagem,
+
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(
-                keyboard
-            ),
+
+            reply_markup=
+                InlineKeyboardMarkup(
+                    keyboard
+                ),
         )
 
 
@@ -487,17 +647,21 @@ async def comprar(
     keyboard = [
 
         [
+
             InlineKeyboardButton(
                 "💳 Continuar para pagamento",
                 callback_data="pagamento"
             )
+
         ],
 
         [
+
             InlineKeyboardButton(
                 "⬅️ Voltar aos produtos",
                 callback_data="produtos"
             )
+
         ],
 
     ]
@@ -505,15 +669,20 @@ async def comprar(
     await query.edit_message_text(
 
         "🛒 *Pedido selecionado!*\n\n"
+
         "📸 Pacote de fotos\n"
+
         "💰 Total: *R$ 29,99*\n\n"
-        "Clique abaixo para gerar o PIX.",
+
+        "Clique abaixo para "
+        "continuar para o pagamento.",
 
         parse_mode="Markdown",
 
-        reply_markup=InlineKeyboardMarkup(
-            keyboard
-        ),
+        reply_markup=
+            InlineKeyboardMarkup(
+                keyboard
+            ),
     )
 
 
@@ -533,13 +702,91 @@ async def pagamento(
     if not MP_TOKEN:
 
         await query.message.reply_text(
-            "❌ Mercado Pago não está configurado."
+
+            "❌ Mercado Pago "
+            "não está configurado."
+
         )
 
         return
 
+    # Marca que este usuário
+    # está aguardando o e-mail
+    context.user_data[
+        "aguardando_email"
+    ] = True
+
     await query.message.reply_text(
-        "⏳ Gerando seu PIX...\n"
+
+        "📧 *Antes de gerar o PIX*\n\n"
+
+        "Digite seu e-mail abaixo.\n\n"
+
+        "Exemplo:\n"
+        "seuemail@gmail.com\n\n"
+
+        "🔒 O e-mail será usado "
+        "para identificar o comprador "
+        "no Mercado Pago.",
+
+        parse_mode="Markdown"
+    )
+
+
+# =========================
+# RECEBER E-MAIL
+# =========================
+
+async def receber_email(
+    update,
+    context
+):
+
+    # Se o bot não estiver esperando
+    # um e-mail, ignora a mensagem
+    if not context.user_data.get(
+        "aguardando_email"
+    ):
+
+        return
+
+    email = (
+        update.message.text
+        .strip()
+        .lower()
+    )
+
+    # Validação básica
+    padrao_email = (
+        r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+    )
+
+    if not re.match(
+        padrao_email,
+        email
+    ):
+
+        await update.message.reply_text(
+
+            "❌ E-mail inválido.\n\n"
+
+            "Digite um e-mail válido.\n\n"
+
+            "Exemplo:\n"
+            "seuemail@gmail.com"
+
+        )
+
+        return
+
+    # Para de esperar o e-mail
+    context.user_data[
+        "aguardando_email"
+    ] = False
+
+    await update.message.reply_text(
+
+        "⏳ Gerando seu PIX...\n\n"
         "Aguarde alguns segundos."
     )
 
@@ -548,11 +795,17 @@ async def pagamento(
         resultado = await __import__(
             "asyncio"
         ).to_thread(
+
             criar_pix,
-            query.from_user.id
+
+            update.effective_user.id,
+
+            email
         )
 
-        order_id = resultado.get("id")
+        order_id = resultado.get(
+            "id"
+        )
 
         transactions = resultado.get(
             "transactions",
@@ -566,8 +819,10 @@ async def pagamento(
 
         if not payments:
 
-            await query.message.reply_text(
-                "❌ O Mercado Pago não retornou o pagamento."
+            await update.message.reply_text(
+
+                "❌ O Mercado Pago "
+                "não retornou o pagamento."
             )
 
             return
@@ -589,8 +844,10 @@ async def pagamento(
 
         if not qr_code:
 
-            await query.message.reply_text(
-                "❌ O Mercado Pago não retornou o código PIX."
+            await update.message.reply_text(
+
+                "❌ O Mercado Pago "
+                "não retornou o código PIX."
             )
 
             return
@@ -600,36 +857,61 @@ async def pagamento(
         if ticket_url:
 
             botoes.append([
+
                 InlineKeyboardButton(
+
                     "💳 Abrir pagamento PIX",
+
                     url=ticket_url
                 )
+
             ])
 
         botoes.append([
+
             InlineKeyboardButton(
+
                 "🛍️ Voltar aos produtos",
+
                 callback_data="produtos"
             )
+
         ])
 
         mensagem = (
+
             "✅ *PIX gerado com sucesso!*\n\n"
+
             "📸 Produto: *Pacote de fotos*\n"
+
             "💰 Valor: *R$ 29,99*\n\n"
+
+            "📧 E-mail informado:\n"
+            f"{email}\n\n"
+
             "📋 *PIX Copia e Cola:*\n\n"
+
             f"`{qr_code}`\n\n"
-            "Copie o código acima e cole no "
-            "aplicativo do seu banco para pagar.\n\n"
-            "⚠️ Este pagamento está em ambiente de TESTE."
+
+            "Copie o código acima e cole "
+            "no aplicativo do seu banco "
+            "para pagar.\n\n"
+
+            "⏳ Após o pagamento ser confirmado, "
+            "você receberá automaticamente "
+            "o acesso ao Grupo VIP."
         )
 
-        await query.message.reply_text(
+        await update.message.reply_text(
+
             mensagem,
+
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(
-                botoes
-            )
+
+            reply_markup=
+                InlineKeyboardMarkup(
+                    botoes
+                )
         )
 
         print(
@@ -637,14 +919,26 @@ async def pagamento(
             order_id
         )
 
+        print(
+            "Comprador:",
+            email
+        )
+
     except Exception as erro:
 
-        await query.message.reply_text(
+        await update.message.reply_text(
 
-            "❌ Não foi possível criar o pagamento.\n\n"
+            "❌ Não foi possível criar "
+            "o pagamento.\n\n"
+
             "Erro do Mercado Pago:\n\n"
-            f"{erro}"
 
+            f"{erro}"
+        )
+
+        print(
+            "Erro ao criar pagamento:",
+            erro
         )
 
 
@@ -660,10 +954,15 @@ async def ajuda(
     await update.message.reply_text(
 
         "ℹ️ *Comandos disponíveis:*\n\n"
+
         "/start — Iniciar\n"
+
         "/produtos — Ver produtos\n"
+
         "/ajuda — Ajuda\n"
+
         "/id — Ver ID do grupo\n"
+
         "/testevip — Criar convite VIP de teste",
 
         parse_mode="Markdown",
@@ -682,6 +981,7 @@ async def id_grupo(
     chat = update.effective_chat
 
     await update.message.reply_text(
+
         f"🆔 ID deste grupo:\n\n{chat.id}"
     )
 
@@ -695,12 +995,17 @@ async def id_grupo(
 # TESTAR CONVITE VIP
 # =========================
 
-async def testevip(update, context):
+async def testevip(
+    update,
+    context
+):
 
-    # Primeiro confirma que o comando chegou
     await update.message.reply_text(
+
         "⏳ Recebi o comando /testevip!\n\n"
-        "🔐 Estou tentando criar o convite VIP..."
+
+        "🔐 Estou tentando criar "
+        "o convite VIP..."
     )
 
     try:
@@ -712,10 +1017,15 @@ async def testevip(update, context):
         )
 
         await update.message.reply_text(
+
             "✅ CONVITE VIP CRIADO!\n\n"
+
             "🔐 Link de teste:\n\n"
+
             f"{convite}\n\n"
-            "⚠️ Este convite permite apenas 1 entrada."
+
+            "⚠️ Este convite permite "
+            "apenas 1 entrada."
         )
 
         print(
@@ -731,8 +1041,12 @@ async def testevip(update, context):
         )
 
         await update.message.reply_text(
-            "❌ ERRO AO CRIAR O CONVITE VIP.\n\n"
+
+            "❌ ERRO AO CRIAR "
+            "O CONVITE VIP.\n\n"
+
             "Detalhes do erro:\n\n"
+
             f"{erro}"
         )
 
@@ -746,23 +1060,33 @@ def main():
     if not TOKEN:
 
         raise RuntimeError(
-            "TELEGRAM_TOKEN não configurado no Render."
+            "TELEGRAM_TOKEN não configurado "
+            "no Render."
         )
 
     if not MP_TOKEN:
 
         raise RuntimeError(
-            "MERCADOPAGO_ACCESS_TOKEN não configurado no Render."
+            "MERCADOPAGO_ACCESS_TOKEN "
+            "não configurado no Render."
         )
 
+    # Servidor HTTP para o Render
     threading.Thread(
         target=start_server,
         daemon=True
     ).start()
 
-    app = Application.builder().token(
-        TOKEN
-    ).build()
+    app = (
+        Application
+        .builder()
+        .token(TOKEN)
+        .build()
+    )
+
+    # =========================
+    # COMANDOS
+    # =========================
 
     app.add_handler(
         CommandHandler(
@@ -792,10 +1116,6 @@ def main():
         )
     )
 
-    # =========================
-    # COMANDO /testevip
-    # =========================
-
     app.add_handler(
         CommandHandler(
             "testevip",
@@ -803,25 +1123,57 @@ def main():
         )
     )
 
+    # =========================
+    # RECEBER E-MAIL
+    # =========================
+
     app.add_handler(
+
+        MessageHandler(
+
+            filters.TEXT
+            & ~filters.COMMAND,
+
+            receber_email
+        )
+
+    )
+
+    # =========================
+    # BOTÕES
+    # =========================
+
+    app.add_handler(
+
         CallbackQueryHandler(
+
             produtos,
+
             pattern="^produtos$"
         )
+
     )
 
     app.add_handler(
+
         CallbackQueryHandler(
+
             comprar,
+
             pattern="^comprar$"
         )
+
     )
 
     app.add_handler(
+
         CallbackQueryHandler(
+
             pagamento,
+
             pattern="^pagamento$"
         )
+
     )
 
     print(
@@ -831,5 +1183,10 @@ def main():
     app.run_polling()
 
 
+# =========================
+# EXECUTAR
+# =========================
+
 if __name__ == "__main__":
+
     main()
