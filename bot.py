@@ -7,6 +7,7 @@ import urllib.error
 import re
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
 
 from telegram import (
     Update,
@@ -56,11 +57,8 @@ def criar_pix(chat_id, email):
 
     dados = {
         "type": "online",
-
         "external_reference": external_reference,
-
         "total_amount": VALOR,
-
         "processing_mode": "automatic",
 
         "payer": {
@@ -97,11 +95,8 @@ def criar_pix(chat_id, email):
 
     requisicao = urllib.request.Request(
         url,
-
         data=dados_json,
-
         headers=headers,
-
         method="POST"
     )
 
@@ -153,9 +148,7 @@ def consultar_order(order_id):
 
     requisicao = urllib.request.Request(
         url,
-
         headers=headers,
-
         method="GET"
     )
 
@@ -201,7 +194,6 @@ def enviar_telegram(
 
     requisicao = urllib.request.Request(
         url,
-
         data=dados_json,
 
         headers={
@@ -293,7 +285,6 @@ def processar_webhook(dados):
 
     try:
 
-        # DIAGNÓSTICO DO WEBHOOK
         print("========================================")
         print("WEBHOOK MERCADO PAGO RECEBIDO")
         print("Dados recebidos:", dados)
@@ -527,6 +518,11 @@ class HealthHandler(
 
     def do_GET(self):
 
+        print("========================================")
+        print("REQUISIÇÃO GET RECEBIDA")
+        print("Caminho:", self.path)
+        print("========================================")
+
         self.send_response(
             200
         )
@@ -545,9 +541,12 @@ class HealthHandler(
 
     def do_POST(self):
 
-        if self.path.startswith(
-            "/webhook/mercadopago"
-        ):
+        print("========================================")
+        print("POST RECEBIDO NO WEBHOOK")
+        print("Caminho:", self.path)
+        print("========================================")
+
+        try:
 
             tamanho = int(
                 self.headers.get(
@@ -560,50 +559,159 @@ class HealthHandler(
                 tamanho
             )
 
-            try:
+            print(
+                "Corpo recebido:",
+                corpo
+            )
 
-                dados = json.loads(
-                    corpo
-                    .decode("utf-8")
+            dados = {}
+
+            # =========================
+            # TENTA LER JSON
+            # =========================
+
+            if corpo:
+
+                try:
+
+                    dados = json.loads(
+                        corpo.decode("utf-8")
+                    )
+
+                except Exception as erro:
+
+                    print(
+                        "Corpo não é JSON:",
+                        erro
+                    )
+
+
+            # =========================
+            # LER PARÂMETROS DA URL
+            # =========================
+
+            url = urlparse(
+                self.path
+            )
+
+            parametros = parse_qs(
+                url.query
+            )
+
+            print(
+                "Parâmetros recebidos:",
+                parametros
+            )
+
+            order_id = parametros.get(
+                "data.id",
+                [None]
+            )[0]
+
+
+            # =========================
+            # DATA.ID VEIO NA URL
+            # =========================
+
+            if order_id and not dados:
+
+                dados = {
+
+                    "data": {
+
+                        "id":
+                            order_id
+
+                    },
+
+                    "type":
+                        parametros.get(
+                            "type",
+                            ["order"]
+                        )[0]
+
+                }
+
+
+            # =========================
+            # TAMBÉM ACEITA ID DIRETO
+            # =========================
+
+            if not order_id and dados:
+
+                data_webhook = dados.get(
+                    "data",
+                    {}
                 )
 
-                # DIAGNÓSTICO DO RECEBIMENTO
-                print("========================================")
-                print("REQUISIÇÃO WEBHOOK RECEBIDA")
-                print("Caminho:", self.path)
-                print("Dados:", dados)
-                print("========================================")
+                if isinstance(
+                    data_webhook,
+                    dict
+                ):
+
+                    order_id = data_webhook.get(
+                        "id"
+                    )
+
+
+            print("========================================")
+            print("DADOS FINAIS DO WEBHOOK:")
+            print(dados)
+            print("Order ID:", order_id)
+            print("========================================")
+
+
+            # =========================
+            # PROCESSAR WEBHOOK
+            # =========================
+
+            if dados:
 
                 threading.Thread(
+
                     target=processar_webhook,
-                    args=(dados,),
+
+                    args=(
+                        dados,
+                    ),
+
                     daemon=True
+
                 ).start()
 
-            except Exception as erro:
+            else:
 
                 print(
-                    "Erro recebendo webhook:",
-                    erro
+                    "Webhook recebido sem dados."
                 )
 
-            self.send_response(
-                200
-            )
 
-            self.end_headers()
+        except Exception as erro:
 
-            self.wfile.write(
-                b"OK"
-            )
+            print("========================================")
+            print("ERRO RECEBENDO WEBHOOK:")
+            print(erro)
+            print("========================================")
 
-            return
+
+        # =========================
+        # RESPONDER MERCADO PAGO
+        # =========================
 
         self.send_response(
-            404
+            200
+        )
+
+        self.send_header(
+            "Content-Type",
+            "text/plain"
         )
 
         self.end_headers()
+
+        self.wfile.write(
+            b"OK"
+        )
 
 
     def log_message(
