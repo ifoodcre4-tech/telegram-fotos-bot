@@ -21,6 +21,12 @@ PORT = int(os.getenv("PORT", "10000"))
 VALOR = "29.99"
 PRODUTO = "Pacote de fotos"
 
+# =========================
+# GRUPO VIP
+# =========================
+
+ID_GRUPO_VIP = -5328427809
+
 
 # =========================
 # MERCADO PAGO
@@ -158,6 +164,54 @@ def enviar_telegram(chat_id, mensagem):
 
 
 # =========================
+# CRIAR CONVITE VIP
+# =========================
+
+def criar_convite_vip():
+
+    url = (
+        "https://api.telegram.org/bot"
+        + TOKEN
+        + "/createChatInviteLink"
+    )
+
+    dados = {
+        "chat_id": ID_GRUPO_VIP,
+        "member_limit": 1,
+        "name": "Convite VIP"
+    }
+
+    dados_json = json.dumps(dados).encode("utf-8")
+
+    requisicao = urllib.request.Request(
+        url,
+        data=dados_json,
+        headers={
+            "Content-Type": "application/json"
+        },
+        method="POST"
+    )
+
+    with urllib.request.urlopen(
+        requisicao,
+        timeout=30
+    ) as resposta:
+
+        resultado = json.loads(
+            resposta.read().decode("utf-8")
+        )
+
+    if not resultado.get("ok"):
+
+        raise Exception(
+            "Erro ao criar convite VIP: "
+            + str(resultado)
+        )
+
+    return resultado["result"]["invite_link"]
+
+
+# =========================
 # WEBHOOK MERCADO PAGO
 # =========================
 
@@ -195,24 +249,76 @@ def processar_webhook(dados):
 
         chat_id = partes[1]
 
+        # =========================
+        # CRIAR CONVITE VIP
+        # =========================
+
+        convite_vip = criar_convite_vip()
+
         mensagem = (
             "✅ PAGAMENTO CONFIRMADO!\n\n"
             "📸 Produto: Pacote de fotos\n"
             "💰 Valor: R$ 29,99\n\n"
-            "🎉 Seu pagamento foi aprovado com sucesso!\n\n"
-            "📦 Seu pedido está liberado."
+            "🎉 Seu pagamento foi aprovado!\n\n"
+            "🔐 Seu acesso ao Grupo VIP está liberado.\n\n"
+            "👇 Clique no botão abaixo para entrar:"
         )
 
-        enviar_telegram(
-            chat_id,
-            mensagem
+        # =========================
+        # ENVIAR MENSAGEM COM LINK
+        # =========================
+
+        url = (
+            "https://api.telegram.org/bot"
+            + TOKEN
+            + "/sendMessage"
         )
+
+        dados_mensagem = {
+            "chat_id": chat_id,
+            "text": mensagem,
+            "reply_markup": {
+                "inline_keyboard": [
+                    [
+                        {
+                            "text": "🔐 ENTRAR NO GRUPO VIP",
+                            "url": convite_vip
+                        }
+                    ]
+                ]
+            }
+        }
+
+        dados_json = json.dumps(
+            dados_mensagem
+        ).encode("utf-8")
+
+        requisicao = urllib.request.Request(
+            url,
+            data=dados_json,
+            headers={
+                "Content-Type": "application/json"
+            },
+            method="POST"
+        )
+
+        with urllib.request.urlopen(
+            requisicao,
+            timeout=30
+        ) as resposta:
+
+            resposta.read()
 
         print(
             "Pagamento confirmado:",
             order_id,
             "Chat:",
             chat_id
+        )
+
+        print(
+            "Convite VIP criado:",
+            convite_vip
         )
 
     except Exception as erro:
@@ -617,10 +723,6 @@ def main():
     app.add_handler(
         CommandHandler("ajuda", ajuda)
     )
-
-    # =========================
-    # COMANDO /ID
-    # =========================
 
     app.add_handler(
         CommandHandler("id", id_grupo)
