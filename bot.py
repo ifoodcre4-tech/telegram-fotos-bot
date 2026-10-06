@@ -25,28 +25,46 @@ from telegram.ext import (
 )
 
 
+# =========================================================
+# CONFIGURAÇÕES
+# =========================================================
+
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 MP_TOKEN = os.getenv("MERCADOPAGO_ACCESS_TOKEN")
-PORT = int(os.getenv("PORT", "10000"))
+
+PORT = int(
+    os.getenv(
+        "PORT",
+        "10000"
+    )
+)
 
 VALOR = "29.99"
+
 PRODUTO = "Pacote de fotos"
-
-
-# =========================
-# GRUPO VIP
-# =========================
 
 ID_GRUPO_VIP = -5328427809
 
 
-# =========================
-# MERCADO PAGO
-# =========================
+# =========================================================
+# ORDERS JÁ PROCESSADAS
+# =========================================================
 
-def criar_pix(chat_id, email):
+ORDERS_PROCESSADAS = set()
 
-    url = "https://api.mercadopago.com/v1/orders"
+
+# =========================================================
+# MERCADO PAGO - CRIAR PIX
+# =========================================================
+
+def criar_pix(
+    chat_id,
+    email
+):
+
+    url = (
+        "https://api.mercadopago.com/v1/orders"
+    )
 
     external_reference = (
         "telegram_"
@@ -56,55 +74,90 @@ def criar_pix(chat_id, email):
     )
 
     dados = {
-        "type": "online",
-        "external_reference": external_reference,
-        "total_amount": VALOR,
-        "processing_mode": "automatic",
+
+        "type":
+            "online",
+
+        "external_reference":
+            external_reference,
+
+        "total_amount":
+            VALOR,
+
+        "processing_mode":
+            "automatic",
 
         "payer": {
-            "email": email
+
+            "email":
+                email
         },
 
         "transactions": {
+
             "payments": [
+
                 {
-                    "amount": VALOR,
+
+                    "amount":
+                        VALOR,
 
                     "payment_method": {
-                        "id": "pix",
-                        "type": "bank_transfer"
+
+                        "id":
+                            "pix",
+
+                        "type":
+                            "bank_transfer"
                     }
+
                 }
+
             ]
+
         }
+
     }
 
     dados_json = json.dumps(
         dados
-    ).encode("utf-8")
+    ).encode(
+        "utf-8"
+    )
 
     headers = {
-        "Content-Type": "application/json",
+
+        "Content-Type":
+            "application/json",
 
         "Authorization":
             "Bearer " + MP_TOKEN,
 
         "X-Idempotency-Key":
             str(uuid.uuid4())
+
     }
 
     requisicao = urllib.request.Request(
+
         url,
+
         data=dados_json,
+
         headers=headers,
+
         method="POST"
+
     )
 
     try:
 
         with urllib.request.urlopen(
+
             requisicao,
+
             timeout=30
+
         ) as resposta:
 
             conteudo = (
@@ -126,15 +179,20 @@ def criar_pix(chat_id, email):
         )
 
         raise Exception(
-            f"Mercado Pago HTTP {erro.code}: {corpo}"
+            "Mercado Pago HTTP "
+            + str(erro.code)
+            + ": "
+            + corpo
         )
 
 
-# =========================
+# =========================================================
 # CONSULTAR ORDER
-# =========================
+# =========================================================
 
-def consultar_order(order_id):
+def consultar_order(
+    order_id
+):
 
     url = (
         "https://api.mercadopago.com/v1/orders/"
@@ -142,19 +200,28 @@ def consultar_order(order_id):
     )
 
     headers = {
+
         "Authorization":
             "Bearer " + MP_TOKEN
+
     }
 
     requisicao = urllib.request.Request(
+
         url,
+
         headers=headers,
+
         method="GET"
+
     )
 
     with urllib.request.urlopen(
+
         requisicao,
+
         timeout=30
+
     ) as resposta:
 
         conteudo = (
@@ -168,53 +235,9 @@ def consultar_order(order_id):
         )
 
 
-# =========================
-# TELEGRAM VIA API
-# =========================
-
-def enviar_telegram(
-    chat_id,
-    mensagem
-):
-
-    url = (
-        "https://api.telegram.org/bot"
-        + TOKEN
-        + "/sendMessage"
-    )
-
-    dados = {
-        "chat_id": chat_id,
-        "text": mensagem
-    }
-
-    dados_json = json.dumps(
-        dados
-    ).encode("utf-8")
-
-    requisicao = urllib.request.Request(
-        url,
-        data=dados_json,
-
-        headers={
-            "Content-Type":
-                "application/json"
-        },
-
-        method="POST"
-    )
-
-    with urllib.request.urlopen(
-        requisicao,
-        timeout=30
-    ) as resposta:
-
-        resposta.read()
-
-
-# =========================
+# =========================================================
 # CRIAR CONVITE VIP
-# =========================
+# =========================================================
 
 def criar_convite_vip():
 
@@ -225,6 +248,7 @@ def criar_convite_vip():
     )
 
     dados = {
+
         "chat_id":
             ID_GRUPO_VIP,
 
@@ -232,42 +256,58 @@ def criar_convite_vip():
             1,
 
         "name":
-            "Convite VIP"
+            "Acesso VIP"
+
     }
 
     dados_json = json.dumps(
         dados
-    ).encode("utf-8")
+    ).encode(
+        "utf-8"
+    )
 
     requisicao = urllib.request.Request(
+
         url,
 
         data=dados_json,
 
         headers={
+
             "Content-Type":
                 "application/json"
+
         },
 
         method="POST"
+
     )
 
     with urllib.request.urlopen(
+
         requisicao,
+
         timeout=30
+
     ) as resposta:
 
         resultado = json.loads(
+
             resposta
             .read()
             .decode("utf-8")
+
         )
 
-    if not resultado.get("ok"):
+    if not resultado.get(
+        "ok"
+    ):
 
         raise Exception(
+
             "Erro ao criar convite VIP: "
             + str(resultado)
+
         )
 
     return resultado[
@@ -277,97 +317,235 @@ def criar_convite_vip():
     ]
 
 
-# =========================
-# WEBHOOK MERCADO PAGO
-# =========================
+# =========================================================
+# ENVIAR MENSAGEM PELO TELEGRAM
+# =========================================================
 
-def processar_webhook(dados):
+def enviar_mensagem_telegram(
+
+    chat_id,
+
+    mensagem,
+
+    convite=None
+
+):
+
+    url = (
+
+        "https://api.telegram.org/bot"
+
+        + TOKEN
+
+        + "/sendMessage"
+
+    )
+
+    dados = {
+
+        "chat_id":
+            chat_id,
+
+        "text":
+            mensagem
+
+    }
+
+    if convite:
+
+        dados[
+            "reply_markup"
+        ] = {
+
+            "inline_keyboard": [
+
+                [
+
+                    {
+
+                        "text":
+                            "🔐 ENTRAR NO GRUPO VIP",
+
+                        "url":
+                            convite
+
+                    }
+
+                ]
+
+            ]
+
+        }
+
+    dados_json = json.dumps(
+        dados
+    ).encode(
+        "utf-8"
+    )
+
+    requisicao = urllib.request.Request(
+
+        url,
+
+        data=dados_json,
+
+        headers={
+
+            "Content-Type":
+                "application/json"
+
+        },
+
+        method="POST"
+
+    )
+
+    with urllib.request.urlopen(
+
+        requisicao,
+
+        timeout=30
+
+    ) as resposta:
+
+        resposta.read()
+
+
+# =========================================================
+# PROCESSAR PAGAMENTO
+# =========================================================
+
+def processar_webhook(
+    dados
+):
 
     try:
 
-        print("========================================")
-        print("WEBHOOK MERCADO PAGO RECEBIDO")
-        print("Dados recebidos:", dados)
-        print("========================================")
+        print(
+            "========================================"
+        )
+
+        print(
+            "WEBHOOK MERCADO PAGO RECEBIDO"
+        )
+
+        print(
+            "Dados recebidos:",
+            dados
+        )
+
+        print(
+            "========================================"
+        )
+
 
         data = dados.get(
             "data",
             {}
         )
 
+
         order_id = data.get(
             "id"
         )
+
 
         print(
             "Order ID recebido:",
             order_id
         )
 
+
         if not order_id:
 
             print(
-                "Webhook recebido sem Order ID."
+                "Webhook sem Order ID."
             )
 
             return
+
+
+        # =================================================
+        # EVITAR DUPLICAÇÃO
+        # =================================================
+
+        if str(order_id) in ORDERS_PROCESSADAS:
+
+            print(
+                "Order já processada:",
+                order_id
+            )
+
+            return
+
 
         print(
             "Consultando Order:",
             order_id
         )
 
+
         order = consultar_order(
             order_id
         )
+
 
         print(
             "Order consultada:",
             order
         )
 
+
         status = order.get(
             "status"
         )
+
 
         print(
             "Status da Order:",
             status
         )
 
+
         if status != "processed":
 
             print(
-                "Pagamento ainda não está como processed."
+                "Pagamento ainda não está processado."
             )
 
             return
 
-        external_reference = (
-            order.get(
-                "external_reference",
-                ""
-            )
+
+        external_reference = order.get(
+
+            "external_reference",
+
+            ""
+
         )
+
 
         print(
             "External reference:",
             external_reference
         )
 
+
         if not external_reference.startswith(
             "telegram_"
         ):
 
             print(
-                "External reference não pertence ao bot."
+                "Order não pertence ao bot."
             )
 
             return
 
+
         partes = external_reference.split(
             "_"
         )
+
 
         if len(partes) < 2:
 
@@ -377,94 +555,76 @@ def processar_webhook(dados):
 
             return
 
+
         chat_id = partes[1]
+
 
         print(
             "Chat ID do comprador:",
             chat_id
         )
 
+
+        # =================================================
+        # CRIAR CONVITE
+        # =================================================
+
         convite_vip = criar_convite_vip()
+
 
         print(
             "Convite VIP criado:",
             convite_vip
         )
 
-        mensagem = (
-            "✅ PAGAMENTO CONFIRMADO!\n\n"
 
-            "📸 Produto: Pacote de fotos\n"
+        # =================================================
+        # MENSAGEM FINAL
+        # =================================================
+
+        mensagem = (
+
+            "🎉 PAGAMENTO CONFIRMADO!\n\n"
+
+            "📸 Produto: "
+            + PRODUTO
+            + "\n"
+
             "💰 Valor: R$ 29,99\n\n"
 
-            "🎉 Seu pagamento foi aprovado!\n\n"
+            "✅ Seu pagamento foi aprovado!\n\n"
 
             "🔐 Seu acesso ao Grupo VIP "
             "está liberado.\n\n"
 
             "👇 Clique no botão abaixo "
-            "para entrar:"
+            "para entrar no grupo.\n\n"
+
+            "⚠️ Este convite é individual "
+            "e permite apenas 1 entrada."
+
         )
 
-        url = (
-            "https://api.telegram.org/bot"
-            + TOKEN
-            + "/sendMessage"
+
+        enviar_mensagem_telegram(
+
+            chat_id,
+
+            mensagem,
+
+            convite_vip
+
         )
 
-        dados_mensagem = {
 
-            "chat_id":
-                chat_id,
+        # =================================================
+        # MARCAR COMO PROCESSADA
+        # =================================================
 
-            "text":
-                mensagem,
-
-            "reply_markup": {
-
-                "inline_keyboard": [
-
-                    [
-
-                        {
-                            "text":
-                                "🔐 ENTRAR NO GRUPO VIP",
-
-                            "url":
-                                convite_vip
-                        }
-
-                    ]
-
-                ]
-
-            }
-
-        }
-
-        dados_json = json.dumps(
-            dados_mensagem
-        ).encode("utf-8")
-
-        requisicao = urllib.request.Request(
-            url,
-
-            data=dados_json,
-
-            headers={
-                "Content-Type":
-                    "application/json"
-            },
-
-            method="POST"
+        ORDERS_PROCESSADAS.add(
+            str(order_id)
         )
 
-        with urllib.request.urlopen(
-            requisicao,
-            timeout=30
-        ) as resposta:
-
-            resposta.read()
 
         print(
             "========================================"
@@ -489,6 +649,7 @@ def processar_webhook(dados):
             "========================================"
         )
 
+
     except Exception as erro:
 
         print(
@@ -508,20 +669,18 @@ def processar_webhook(dados):
         )
 
 
-# =========================
-# SERVIDOR DO RENDER
-# =========================
+# =========================================================
+# SERVIDOR RENDER
+# =========================================================
 
 class HealthHandler(
     BaseHTTPRequestHandler
 ):
 
-    def do_GET(self):
 
-        print("========================================")
-        print("REQUISIÇÃO GET RECEBIDA")
-        print("Caminho:", self.path)
-        print("========================================")
+    def do_GET(
+        self
+    ):
 
         self.send_response(
             200
@@ -539,56 +698,83 @@ class HealthHandler(
         )
 
 
-    def do_POST(self):
+    def do_POST(
+        self
+    ):
 
-        print("========================================")
-        print("POST RECEBIDO NO WEBHOOK")
-        print("Caminho:", self.path)
-        print("========================================")
+        print(
+            "========================================"
+        )
+
+        print(
+            "POST RECEBIDO"
+        )
+
+        print(
+            "Caminho:",
+            self.path
+        )
+
+        print(
+            "========================================"
+        )
+
 
         try:
 
             tamanho = int(
+
                 self.headers.get(
+
                     "Content-Length",
+
                     "0"
+
                 )
+
             )
+
 
             corpo = self.rfile.read(
                 tamanho
             )
+
 
             print(
                 "Corpo recebido:",
                 corpo
             )
 
+
             dados = {}
 
-            # =========================
-            # TENTA LER JSON
-            # =========================
+
+            # =================================================
+            # JSON
+            # =================================================
 
             if corpo:
 
                 try:
 
                     dados = json.loads(
-                        corpo.decode("utf-8")
+
+                        corpo
+                        .decode("utf-8")
+
                     )
 
                 except Exception as erro:
 
                     print(
-                        "Corpo não é JSON:",
+                        "Não foi possível ler JSON:",
                         erro
                     )
 
 
-            # =========================
-            # LER PARÂMETROS DA URL
-            # =========================
+            # =================================================
+            # PARÂMETROS DA URL
+            # =================================================
 
             url = urlparse(
                 self.path
@@ -598,20 +784,19 @@ class HealthHandler(
                 url.query
             )
 
-            print(
-                "Parâmetros recebidos:",
-                parametros
-            )
 
             order_id = parametros.get(
+
                 "data.id",
+
                 [None]
+
             )[0]
 
 
-            # =========================
-            # DATA.ID VEIO NA URL
-            # =========================
+            # =================================================
+            # CASO O ID VENHA NA URL
+            # =================================================
 
             if order_id and not dados:
 
@@ -625,28 +810,38 @@ class HealthHandler(
                     },
 
                     "type":
+
                         parametros.get(
+
                             "type",
+
                             ["order"]
+
                         )[0]
 
                 }
 
 
-            # =========================
-            # TAMBÉM ACEITA ID DIRETO
-            # =========================
+            # =================================================
+            # CASO O ID VENHA NO JSON
+            # =================================================
 
             if not order_id and dados:
 
                 data_webhook = dados.get(
+
                     "data",
+
                     {}
+
                 )
 
                 if isinstance(
+
                     data_webhook,
+
                     dict
+
                 ):
 
                     order_id = data_webhook.get(
@@ -654,16 +849,27 @@ class HealthHandler(
                     )
 
 
-            print("========================================")
-            print("DADOS FINAIS DO WEBHOOK:")
-            print(dados)
-            print("Order ID:", order_id)
-            print("========================================")
+            print(
+                "========================================"
+            )
 
+            print(
+                "DADOS FINAIS:"
+            )
 
-            # =========================
-            # PROCESSAR WEBHOOK
-            # =========================
+            print(
+                dados
+            )
+
+            print(
+                "Order ID:",
+                order_id
+            )
+
+            print(
+                "========================================"
+            )
+
 
             if dados:
 
@@ -671,32 +877,20 @@ class HealthHandler(
 
                     target=processar_webhook,
 
-                    args=(
-                        dados,
-                    ),
+                    args=(dados,),
 
                     daemon=True
 
                 ).start()
 
-            else:
-
-                print(
-                    "Webhook recebido sem dados."
-                )
-
 
         except Exception as erro:
 
-            print("========================================")
-            print("ERRO RECEBENDO WEBHOOK:")
-            print(erro)
-            print("========================================")
+            print(
+                "ERRO RECEBENDO WEBHOOK:",
+                erro
+            )
 
-
-        # =========================
-        # RESPONDER MERCADO PAGO
-        # =========================
 
         self.send_response(
             200
@@ -726,78 +920,136 @@ class HealthHandler(
 def start_server():
 
     server = HTTPServer(
-        ("0.0.0.0", PORT),
+
+        (
+            "0.0.0.0",
+            PORT
+        ),
+
         HealthHandler
+
     )
 
     server.serve_forever()
 
 
-# =========================
-# START
-# =========================
+# =========================================================
+# /START
+# =========================================================
 
 async def start(
     update,
     context
 ):
 
-    keyboard = [[
+    keyboard = [
 
-        InlineKeyboardButton(
-            "🛍️ Ver produtos",
-            callback_data="produtos"
-        )
+        [
 
-    ]]
+            InlineKeyboardButton(
+
+                "🛍️ VER PRODUTO",
+
+                callback_data="produtos"
+
+            )
+
+        ]
+
+    ]
+
+
+    mensagem = (
+
+        "👋 Bem-vindo à nossa loja!\n\n"
+
+        "🔞 Conteúdo exclusivo para maiores "
+        "de 18 anos.\n\n"
+
+        "📸 Temos um pacote de fotos "
+        "disponível.\n\n"
+
+        "💰 Valor: R$ 29,99\n\n"
+
+        "👇 Clique abaixo para conhecer."
+
+    )
+
 
     await update.message.reply_text(
 
-        "👋 Olá! Bem-vindo à nossa loja!\n\n"
-
-        "Clique abaixo para ver "
-        "o produto disponível:",
+        mensagem,
 
         reply_markup=
             InlineKeyboardMarkup(
                 keyboard
-            ),
+            )
+
     )
 
 
-# =========================
+# =========================================================
 # PRODUTOS
-# =========================
+# =========================================================
 
 async def produtos(
     update,
     context
 ):
 
-    keyboard = [[
+    keyboard = [
 
-        InlineKeyboardButton(
-            "🛒 Comprar — R$ 29,99",
-            callback_data="comprar"
-        )
+        [
 
-    ]]
+            InlineKeyboardButton(
+
+                "🛒 COMPRAR — R$ 29,99",
+
+                callback_data="comprar"
+
+            )
+
+        ],
+
+        [
+
+            InlineKeyboardButton(
+
+                "ℹ️ COMO FUNCIONA",
+
+                callback_data="info"
+
+            )
+
+        ]
+
+    ]
+
 
     mensagem = (
 
-        "🛍️ *Produto disponível*\n\n"
+        "📸 *PACOTE DE FOTOS*\n\n"
 
-        "📸 Pacote de fotos\n"
+        "✨ Conteúdo exclusivo\n"
 
-        "💰 Valor: *R$ 29,99*\n\n"
+        "🔐 Acesso através do Grupo VIP\n\n"
 
-        "Clique no botão abaixo "
-        "para comprar."
+        "💰 *R$ 29,99*\n\n"
+
+        "Após o pagamento ser confirmado, "
+        "o acesso ao Grupo VIP será enviado "
+        "automaticamente nesta conversa.\n\n"
+
+        "🔞 Conteúdo destinado exclusivamente "
+        "a maiores de 18 anos."
+
     )
+
 
     if update.callback_query:
 
         await update.callback_query.answer()
+
 
         await update.callback_query.edit_message_text(
 
@@ -808,7 +1060,8 @@ async def produtos(
             reply_markup=
                 InlineKeyboardMarkup(
                     keyboard
-                ),
+                )
+
         )
 
     else:
@@ -822,13 +1075,97 @@ async def produtos(
             reply_markup=
                 InlineKeyboardMarkup(
                     keyboard
-                ),
+                )
+
         )
 
 
-# =========================
+# =========================================================
+# INFORMAÇÕES
+# =========================================================
+
+async def info(
+    update,
+    context
+):
+
+    query = update.callback_query
+
+    await query.answer()
+
+
+    keyboard = [
+
+        [
+
+            InlineKeyboardButton(
+
+                "🛒 COMPRAR",
+
+                callback_data="comprar"
+
+            )
+
+        ],
+
+        [
+
+            InlineKeyboardButton(
+
+                "⬅️ VOLTAR",
+
+                callback_data="produtos"
+
+            )
+
+        ]
+
+    ]
+
+
+    mensagem = (
+
+        "ℹ️ *COMO FUNCIONA*\n\n"
+
+        "1️⃣ Escolha o pacote.\n\n"
+
+        "2️⃣ Informe seu e-mail.\n\n"
+
+        "3️⃣ Gere o PIX.\n\n"
+
+        "4️⃣ Faça o pagamento.\n\n"
+
+        "5️⃣ Após a confirmação, "
+        "o bot envia automaticamente "
+        "seu convite individual para "
+        "o Grupo VIP.\n\n"
+
+        "🔐 O convite permite apenas "
+        "1 entrada.\n\n"
+
+        "🔞 Conteúdo exclusivo para "
+        "maiores de 18 anos."
+
+    )
+
+
+    await query.edit_message_text(
+
+        mensagem,
+
+        parse_mode="Markdown",
+
+        reply_markup=
+            InlineKeyboardMarkup(
+                keyboard
+            )
+
+    )
+
+
+# =========================================================
 # COMPRA
-# =========================
+# =========================================================
 
 async def comprar(
     update,
@@ -839,13 +1176,17 @@ async def comprar(
 
     await query.answer()
 
+
     keyboard = [
 
         [
 
             InlineKeyboardButton(
-                "💳 Continuar para pagamento",
+
+                "💳 CONTINUAR PARA PAGAMENTO",
+
                 callback_data="pagamento"
+
             )
 
         ],
@@ -853,37 +1194,53 @@ async def comprar(
         [
 
             InlineKeyboardButton(
-                "⬅️ Voltar aos produtos",
+
+                "⬅️ VOLTAR",
+
                 callback_data="produtos"
+
             )
 
-        ],
+        ]
 
     ]
 
-    await query.edit_message_text(
 
-        "🛒 *Pedido selecionado!*\n\n"
+    mensagem = (
 
-        "📸 Pacote de fotos\n"
+        "🛒 *PEDIDO*\n\n"
+
+        "📸 Produto: *Pacote de fotos*\n"
 
         "💰 Total: *R$ 29,99*\n\n"
 
-        "Clique abaixo para "
-        "continuar para o pagamento.",
+        "🔐 Após a confirmação do pagamento, "
+        "você receberá automaticamente "
+        "um convite individual para o "
+        "Grupo VIP.\n\n"
+
+        "Clique abaixo para continuar."
+
+    )
+
+
+    await query.edit_message_text(
+
+        mensagem,
 
         parse_mode="Markdown",
 
         reply_markup=
             InlineKeyboardMarkup(
                 keyboard
-            ),
+            )
+
     )
 
 
-# =========================
+# =========================================================
 # PAGAMENTO
-# =========================
+# =========================================================
 
 async def pagamento(
     update,
@@ -893,6 +1250,7 @@ async def pagamento(
     query = update.callback_query
 
     await query.answer()
+
 
     if not MP_TOKEN:
 
@@ -905,30 +1263,33 @@ async def pagamento(
 
         return
 
+
     context.user_data[
         "aguardando_email"
     ] = True
 
+
     await query.message.reply_text(
 
-        "📧 *Antes de gerar o PIX*\n\n"
+        "📧 *E-MAIL PARA PAGAMENTO*\n\n"
 
         "Digite seu e-mail abaixo.\n\n"
 
         "Exemplo:\n"
-        "seuemail@gmail.com\n\n"
+        "`seuemail@gmail.com`\n\n"
 
-        "🔒 O e-mail será usado "
+        "🔒 O e-mail será utilizado "
         "para identificar o comprador "
         "no Mercado Pago.",
 
         parse_mode="Markdown"
+
     )
 
 
-# =========================
+# =========================================================
 # RECEBER E-MAIL
-# =========================
+# =========================================================
 
 async def receber_email(
     update,
@@ -941,19 +1302,31 @@ async def receber_email(
 
         return
 
+
     email = (
+
         update.message.text
+
         .strip()
+
         .lower()
+
     )
+
 
     padrao_email = (
+
         r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
     )
 
+
     if not re.match(
+
         padrao_email,
+
         email
+
     ):
 
         await update.message.reply_text(
@@ -969,15 +1342,22 @@ async def receber_email(
 
         return
 
+
     context.user_data[
         "aguardando_email"
     ] = False
 
+
     await update.message.reply_text(
 
-        "⏳ Gerando seu PIX...\n\n"
-        "Aguarde alguns segundos."
+        "⏳ *GERANDO PIX...*\n\n"
+
+        "Aguarde alguns segundos.",
+
+        parse_mode="Markdown"
+
     )
+
 
     try:
 
@@ -990,21 +1370,32 @@ async def receber_email(
             update.effective_user.id,
 
             email
+
         )
+
 
         order_id = resultado.get(
             "id"
         )
 
+
         transactions = resultado.get(
+
             "transactions",
+
             {}
+
         )
 
+
         payments = transactions.get(
+
             "payments",
+
             []
+
         )
+
 
         if not payments:
 
@@ -1012,24 +1403,37 @@ async def receber_email(
 
                 "❌ O Mercado Pago "
                 "não retornou o pagamento."
+
             )
 
             return
 
+
         payment = payments[0]
 
+
         payment_method = payment.get(
+
             "payment_method",
+
             {}
+
         )
+
 
         qr_code = payment_method.get(
+
             "qr_code"
+
         )
 
+
         ticket_url = payment_method.get(
+
             "ticket_url"
+
         )
+
 
         if not qr_code:
 
@@ -1037,59 +1441,81 @@ async def receber_email(
 
                 "❌ O Mercado Pago "
                 "não retornou o código PIX."
+
             )
 
             return
 
+
         botoes = []
+
 
         if ticket_url:
 
-            botoes.append([
+            botoes.append(
+
+                [
+
+                    InlineKeyboardButton(
+
+                        "💳 ABRIR PAGAMENTO PIX",
+
+                        url=ticket_url
+
+                    )
+
+                ]
+
+            )
+
+
+        botoes.append(
+
+            [
 
                 InlineKeyboardButton(
 
-                    "💳 Abrir pagamento PIX",
+                    "🛍️ VER PRODUTO",
 
-                    url=ticket_url
+                    callback_data="produtos"
+
                 )
 
-            ])
+            ]
 
-        botoes.append([
+        )
 
-            InlineKeyboardButton(
-
-                "🛍️ Voltar aos produtos",
-
-                callback_data="produtos"
-            )
-
-        ])
 
         mensagem = (
 
-            "✅ *PIX gerado com sucesso!*\n\n"
+            "✅ *PIX GERADO!*\n\n"
 
-            "📸 Produto: *Pacote de fotos*\n"
+            "📸 *Produto:* Pacote de fotos\n"
 
-            "💰 Valor: *R$ 29,99*\n\n"
+            "💰 *Valor:* R$ 29,99\n\n"
 
-            "📧 E-mail informado:\n"
-            f"{email}\n\n"
+            "📧 *E-mail:*\n"
+            + email
+            + "\n\n"
 
-            "📋 *PIX Copia e Cola:*\n\n"
+            "📋 *PIX COPIA E COLA:*\n\n"
 
-            f"`{qr_code}`\n\n"
+            "`"
+            + qr_code
+            + "`\n\n"
 
-            "Copie o código acima e cole "
-            "no aplicativo do seu banco "
-            "para pagar.\n\n"
+            "👆 Copie o código acima "
+            "e cole no aplicativo do seu banco.\n\n"
 
-            "⏳ Após o pagamento ser confirmado, "
-            "você receberá automaticamente "
-            "o acesso ao Grupo VIP."
+            "⏳ Depois que o pagamento "
+            "for confirmado, o bot enviará "
+            "automaticamente seu acesso "
+            "ao Grupo VIP.\n\n"
+
+            "🔐 O convite será individual."
+
         )
+
 
         await update.message.reply_text(
 
@@ -1101,6 +1527,12 @@ async def receber_email(
                 InlineKeyboardMarkup(
                     botoes
                 )
+
+        )
+
+
+        print(
+            "========================================"
         )
 
         print(
@@ -1113,6 +1545,16 @@ async def receber_email(
             email
         )
 
+        print(
+            "Chat:",
+            update.effective_user.id
+        )
+
+        print(
+            "========================================"
+        )
+
+
     except Exception as erro:
 
         await update.message.reply_text(
@@ -1122,18 +1564,23 @@ async def receber_email(
 
             "Erro do Mercado Pago:\n\n"
 
-            f"{erro}"
+            + str(erro)
+
         )
+
 
         print(
+
             "Erro ao criar pagamento:",
+
             erro
+
         )
 
 
-# =========================
+# =========================================================
 # AJUDA
-# =========================
+# =========================================================
 
 async def ajuda(
     update,
@@ -1142,25 +1589,29 @@ async def ajuda(
 
     await update.message.reply_text(
 
-        "ℹ️ *Comandos disponíveis:*\n\n"
+        "ℹ️ *AJUDA*\n\n"
 
-        "/start — Iniciar\n"
+        "/start — Abrir loja\n"
 
-        "/produtos — Ver produtos\n"
+        "/produtos — Ver produto\n"
 
-        "/ajuda — Ajuda\n"
+        "/ajuda — Mostrar ajuda\n\n"
 
-        "/id — Ver ID do grupo\n"
+        "💳 O pagamento é realizado "
+        "através do Mercado Pago.\n\n"
 
-        "/testevip — Criar convite VIP de teste",
+        "🔐 Após a confirmação, "
+        "o acesso VIP é enviado "
+        "automaticamente.",
 
-        parse_mode="Markdown",
+        parse_mode="Markdown"
+
     )
 
 
-# =========================
-# ID DO GRUPO VIP
-# =========================
+# =========================================================
+# ID DO GRUPO
+# =========================================================
 
 async def id_grupo(
     update,
@@ -1169,20 +1620,27 @@ async def id_grupo(
 
     chat = update.effective_chat
 
+
     await update.message.reply_text(
 
-        f"🆔 ID deste grupo:\n\n{chat.id}"
+        "🆔 ID deste grupo:\n\n"
+        + str(chat.id)
+
     )
+
 
     print(
+
         "ID DO GRUPO VIP:",
+
         chat.id
+
     )
 
 
-# =========================
-# TESTAR CONVITE VIP
-# =========================
+# =========================================================
+# TESTE VIP
+# =========================================================
 
 async def testevip(
     update,
@@ -1191,121 +1649,185 @@ async def testevip(
 
     await update.message.reply_text(
 
-        "⏳ Recebi o comando /testevip!\n\n"
+        "⏳ Criando convite VIP de teste..."
 
-        "🔐 Estou tentando criar "
-        "o convite VIP..."
     )
+
 
     try:
 
         convite = await __import__(
             "asyncio"
         ).to_thread(
+
             criar_convite_vip
+
         )
+
 
         await update.message.reply_text(
 
-            "✅ CONVITE VIP CRIADO!\n\n"
+            "✅ *CONVITE VIP CRIADO!*\n\n"
 
-            "🔐 Link de teste:\n\n"
+            "🔐 Link:\n\n"
 
-            f"{convite}\n\n"
+            + convite
+            + "\n\n"
 
             "⚠️ Este convite permite "
-            "apenas 1 entrada."
+            "apenas 1 entrada.",
+
+            parse_mode="Markdown"
+
         )
 
+
         print(
+
             "CONVITE VIP DE TESTE:",
+
             convite
+
         )
+
 
     except Exception as erro:
 
         print(
+
             "ERRO NO /testevip:",
+
             erro
+
         )
+
 
         await update.message.reply_text(
 
             "❌ ERRO AO CRIAR "
             "O CONVITE VIP.\n\n"
 
-            "Detalhes do erro:\n\n"
+            + str(erro)
 
-            f"{erro}"
         )
 
 
-# =========================
+# =========================================================
 # MAIN
-# =========================
+# =========================================================
 
 def main():
 
     if not TOKEN:
 
         raise RuntimeError(
+
             "TELEGRAM_TOKEN não configurado "
             "no Render."
+
         )
+
 
     if not MP_TOKEN:
 
         raise RuntimeError(
+
             "MERCADOPAGO_ACCESS_TOKEN "
             "não configurado no Render."
+
         )
+
 
     threading.Thread(
+
         target=start_server,
+
         daemon=True
+
     ).start()
 
+
     app = (
+
         Application
+
         .builder()
+
         .token(TOKEN)
+
         .build()
+
     )
 
+
+    # COMANDOS
+
     app.add_handler(
+
         CommandHandler(
+
             "start",
+
             start
+
         )
+
     )
 
+
     app.add_handler(
+
         CommandHandler(
+
             "produtos",
+
             produtos
+
         )
+
     )
 
+
     app.add_handler(
+
         CommandHandler(
+
             "ajuda",
+
             ajuda
+
         )
+
     )
 
+
     app.add_handler(
+
         CommandHandler(
+
             "id",
+
             id_grupo
+
         )
+
     )
 
+
     app.add_handler(
+
         CommandHandler(
+
             "testevip",
+
             testevip
+
         )
+
     )
+
+
+    # E-MAIL
 
     app.add_handler(
 
@@ -1315,9 +1837,13 @@ def main():
             & ~filters.COMMAND,
 
             receber_email
+
         )
 
     )
+
+
+    # BOTÕES
 
     app.add_handler(
 
@@ -1326,9 +1852,11 @@ def main():
             produtos,
 
             pattern="^produtos$"
+
         )
 
     )
+
 
     app.add_handler(
 
@@ -1337,9 +1865,11 @@ def main():
             comprar,
 
             pattern="^comprar$"
+
         )
 
     )
+
 
     app.add_handler(
 
@@ -1348,20 +1878,53 @@ def main():
             pagamento,
 
             pattern="^pagamento$"
+
         )
 
     )
 
-    print(
-        "Bot iniciado com sucesso!"
+
+    app.add_handler(
+
+        CallbackQueryHandler(
+
+            info,
+
+            pattern="^info$"
+
+        )
+
     )
+
+
+    print(
+        "========================================"
+    )
+
+    print(
+        "BOT INICIADO COM SUCESSO!"
+    )
+
+    print(
+        "Produto:",
+        PRODUTO
+    )
+
+    print(
+        "Valor: R$ 29,99"
+    )
+
+    print(
+        "========================================"
+    )
+
 
     app.run_polling()
 
 
-# =========================
+# =========================================================
 # EXECUTAR
-# =========================
+# =========================================================
 
 if __name__ == "__main__":
 
