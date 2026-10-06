@@ -23,136 +23,20 @@ PRODUTO = "Pacote de fotos"
 
 
 # =========================
-# SERVIDOR DO RENDER
+# MERCADO PAGO
 # =========================
 
-class HealthHandler(BaseHTTPRequestHandler):
-
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"Bot online")
-
-    def log_message(self, format, *args):
-        pass
-
-
-def start_server():
-    server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
-    server.serve_forever()
-
-
-# =========================
-# START
-# =========================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "🛍️ Ver produtos",
-                callback_data="produtos"
-            )
-        ]
-    ]
-
-    await update.message.reply_text(
-        "👋 Olá! Bem-vindo à nossa loja!\n\n"
-        "Clique abaixo para ver o produto disponível:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
-
-
-# =========================
-# PRODUTOS
-# =========================
-
-async def produtos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "🛒 Comprar — R$ 29,99",
-                callback_data="comprar"
-            )
-        ]
-    ]
-
-    mensagem = (
-        "🛍️ *Produto disponível*\n\n"
-        "📸 Pacote de fotos\n"
-        "💰 Valor: *R$ 29,99*\n\n"
-        "Clique no botão abaixo para comprar."
-    )
-
-    if update.callback_query:
-
-        await update.callback_query.answer()
-
-        await update.callback_query.edit_message_text(
-            mensagem,
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-
-    else:
-
-        await update.message.reply_text(
-            mensagem,
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-
-
-# =========================
-# COMPRA
-# =========================
-
-async def comprar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    query = update.callback_query
-
-    await query.answer()
-
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "💳 Continuar para pagamento",
-                callback_data="pagamento"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "⬅️ Voltar aos produtos",
-                callback_data="produtos"
-            )
-        ],
-    ]
-
-    await query.edit_message_text(
-        "🛒 *Pedido selecionado!*\n\n"
-        "📸 Pacote de fotos\n"
-        "💰 Total: *R$ 29,99*\n\n"
-        "Clique abaixo para gerar o PIX.",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
-
-
-# =========================
-# MERCADO PAGO - ORDERS API
-# =========================
-
-def criar_pix():
+def criar_pix(chat_id):
 
     url = "https://api.mercadopago.com/v1/orders"
 
-    # Identificador único do pedido
-    external_reference = "telegram_" + str(uuid.uuid4())
+    external_reference = (
+        "telegram_"
+        + str(chat_id)
+        + "_"
+        + str(uuid.uuid4())
+    )
 
-    # Dados da Order
     dados = {
         "type": "online",
         "external_reference": external_reference,
@@ -209,18 +93,330 @@ def criar_pix():
             f"Mercado Pago HTTP {erro.code}: {corpo}"
         )
 
+
+def consultar_order(order_id):
+
+    url = (
+        "https://api.mercadopago.com/v1/orders/"
+        + str(order_id)
+    )
+
+    headers = {
+        "Authorization": "Bearer " + MP_TOKEN
+    }
+
+    requisicao = urllib.request.Request(
+        url,
+        headers=headers,
+        method="GET"
+    )
+
+    with urllib.request.urlopen(
+        requisicao,
+        timeout=30
+    ) as resposta:
+
+        conteudo = resposta.read().decode("utf-8")
+
+        return json.loads(conteudo)
+
+
+# =========================
+# TELEGRAM VIA API
+# =========================
+
+def enviar_telegram(chat_id, mensagem):
+
+    url = (
+        "https://api.telegram.org/bot"
+        + TOKEN
+        + "/sendMessage"
+    )
+
+    dados = {
+        "chat_id": chat_id,
+        "text": mensagem
+    }
+
+    dados_json = json.dumps(dados).encode("utf-8")
+
+    requisicao = urllib.request.Request(
+        url,
+        data=dados_json,
+        headers={
+            "Content-Type": "application/json"
+        },
+        method="POST"
+    )
+
+    with urllib.request.urlopen(
+        requisicao,
+        timeout=30
+    ) as resposta:
+
+        resposta.read()
+
+
+# =========================
+# WEBHOOK MERCADO PAGO
+# =========================
+
+def processar_webhook(dados):
+
+    try:
+
+        data = dados.get("data", {})
+        order_id = data.get("id")
+
+        if not order_id:
+            return
+
+        order = consultar_order(order_id)
+
+        status = order.get("status")
+
+        if status != "processed":
+            return
+
+        external_reference = order.get(
+            "external_reference",
+            ""
+        )
+
+        if not external_reference.startswith(
+            "telegram_"
+        ):
+            return
+
+        partes = external_reference.split("_")
+
+        if len(partes) < 2:
+            return
+
+        chat_id = partes[1]
+
+        mensagem = (
+            "✅ PAGAMENTO CONFIRMADO!\n\n"
+            "📸 Produto: Pacote de fotos\n"
+            "💰 Valor: R$ 29,99\n\n"
+            "🎉 Seu pagamento foi aprovado com sucesso!\n\n"
+            "📦 Seu pedido está liberado."
+        )
+
+        enviar_telegram(
+            chat_id,
+            mensagem
+        )
+
+        print(
+            "Pagamento confirmado:",
+            order_id,
+            "Chat:",
+            chat_id
+        )
+
     except Exception as erro:
 
-        raise Exception(
-            f"Erro ao conectar ao Mercado Pago: {erro}"
+        print(
+            "Erro no webhook:",
+            erro
         )
+
+
+# =========================
+# SERVIDOR DO RENDER
+# =========================
+
+class HealthHandler(BaseHTTPRequestHandler):
+
+    def do_GET(self):
+
+        self.send_response(200)
+
+        self.send_header(
+            "Content-Type",
+            "text/plain"
+        )
+
+        self.end_headers()
+
+        self.wfile.write(
+            b"Bot online"
+        )
+
+    def do_POST(self):
+
+        if self.path.startswith(
+            "/webhook/mercadopago"
+        ):
+
+            tamanho = int(
+                self.headers.get(
+                    "Content-Length",
+                    "0"
+                )
+            )
+
+            corpo = self.rfile.read(
+                tamanho
+            )
+
+            try:
+
+                dados = json.loads(
+                    corpo.decode("utf-8")
+                )
+
+                threading.Thread(
+                    target=processar_webhook,
+                    args=(dados,),
+                    daemon=True
+                ).start()
+
+            except Exception as erro:
+
+                print(
+                    "Erro recebendo webhook:",
+                    erro
+                )
+
+            self.send_response(200)
+            self.end_headers()
+
+            self.wfile.write(
+                b"OK"
+            )
+
+            return
+
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+
+def start_server():
+
+    server = HTTPServer(
+        ("0.0.0.0", PORT),
+        HealthHandler
+    )
+
+    server.serve_forever()
+
+
+# =========================
+# START
+# =========================
+
+async def start(update, context):
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "🛍️ Ver produtos",
+                callback_data="produtos"
+            )
+        ]
+    ]
+
+    await update.message.reply_text(
+        "👋 Olá! Bem-vindo à nossa loja!\n\n"
+        "Clique abaixo para ver o produto disponível:",
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        ),
+    )
+
+
+# =========================
+# PRODUTOS
+# =========================
+
+async def produtos(update, context):
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "🛒 Comprar — R$ 29,99",
+                callback_data="comprar"
+            )
+        ]
+    ]
+
+    mensagem = (
+        "🛍️ *Produto disponível*\n\n"
+        "📸 Pacote de fotos\n"
+        "💰 Valor: *R$ 29,99*\n\n"
+        "Clique no botão abaixo para comprar."
+    )
+
+    if update.callback_query:
+
+        await update.callback_query.answer()
+
+        await update.callback_query.edit_message_text(
+            mensagem,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(
+                keyboard
+            ),
+        )
+
+    else:
+
+        await update.message.reply_text(
+            mensagem,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(
+                keyboard
+            ),
+        )
+
+
+# =========================
+# COMPRA
+# =========================
+
+async def comprar(update, context):
+
+    query = update.callback_query
+
+    await query.answer()
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "💳 Continuar para pagamento",
+                callback_data="pagamento"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "⬅️ Voltar aos produtos",
+                callback_data="produtos"
+            )
+        ],
+    ]
+
+    await query.edit_message_text(
+        "🛒 *Pedido selecionado!*\n\n"
+        "📸 Pacote de fotos\n"
+        "💰 Total: *R$ 29,99*\n\n"
+        "Clique abaixo para gerar o PIX.",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        ),
+    )
 
 
 # =========================
 # PAGAMENTO
 # =========================
 
-async def pagamento(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def pagamento(update, context):
 
     query = update.callback_query
 
@@ -229,7 +425,7 @@ async def pagamento(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not MP_TOKEN:
 
         await query.message.reply_text(
-            "❌ Mercado Pago não está configurado no Render."
+            "❌ Mercado Pago não está configurado."
         )
 
         return
@@ -241,16 +437,14 @@ async def pagamento(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
 
-        resultado = await __import__("asyncio").to_thread(
-            criar_pix
+        resultado = await __import__(
+            "asyncio"
+        ).to_thread(
+            criar_pix,
+            query.from_user.id
         )
 
-        # Guarda a order para futuras confirmações
         order_id = resultado.get("id")
-
-        if order_id:
-
-            context.user_data["order_id"] = order_id
 
         transactions = resultado.get(
             "transactions",
@@ -265,8 +459,8 @@ async def pagamento(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not payments:
 
             await query.message.reply_text(
-                "❌ O Mercado Pago não retornou o pagamento.\n\n"
-                f"Resposta: {resultado}"
+                "❌ O Mercado Pago não retornou "
+                "o pagamento."
             )
 
             return
@@ -286,22 +480,15 @@ async def pagamento(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "ticket_url"
         )
 
-        status = resultado.get(
-            "status",
-            "unknown"
-        )
-
         if not qr_code:
 
             await query.message.reply_text(
-                "❌ O Mercado Pago não retornou o código PIX.\n\n"
-                f"Status: {status}\n"
-                f"Order: {order_id}"
+                "❌ O Mercado Pago não retornou "
+                "o código PIX."
             )
 
             return
 
-        # Botões
         botoes = []
 
         if ticket_url:
@@ -330,22 +517,30 @@ async def pagamento(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "💰 Valor: *R$ 29,99*\n\n"
             "📋 *PIX Copia e Cola:*\n\n"
             f"`{qr_code}`\n\n"
-            "Copie o código acima e cole no aplicativo "
-            "do seu banco para pagar.\n\n"
-            "⚠️ Este pagamento está em ambiente de TESTE."
+            "Copie o código acima e cole no "
+            "aplicativo do seu banco para pagar.\n\n"
+            "⚠️ Este pagamento está em ambiente "
+            "de TESTE."
         )
 
         await query.message.reply_text(
             mensagem,
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(botoes)
+            reply_markup=InlineKeyboardMarkup(
+                botoes
+            )
+        )
+
+        print(
+            "Order criada:",
+            order_id
         )
 
     except Exception as erro:
 
         await query.message.reply_text(
             "❌ Não foi possível criar o pagamento.\n\n"
-            "Erro retornado pelo Mercado Pago:\n\n"
+            "Erro do Mercado Pago:\n\n"
             f"{erro}"
         )
 
@@ -354,7 +549,7 @@ async def pagamento(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # AJUDA
 # =========================
 
-async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def ajuda(update, context):
 
     await update.message.reply_text(
         "ℹ️ *Comandos disponíveis:*\n\n"
@@ -383,14 +578,14 @@ def main():
             "MERCADOPAGO_ACCESS_TOKEN não configurado no Render."
         )
 
-    # Servidor HTTP para o Render
     threading.Thread(
         target=start_server,
         daemon=True
     ).start()
 
-    # Telegram
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(
+        TOKEN
+    ).build()
 
     app.add_handler(
         CommandHandler("start", start)
@@ -425,7 +620,9 @@ def main():
         )
     )
 
-    print("Bot iniciado com sucesso!")
+    print(
+        "Bot iniciado com sucesso!"
+    )
 
     app.run_polling()
 
