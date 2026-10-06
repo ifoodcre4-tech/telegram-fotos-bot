@@ -293,6 +293,12 @@ def processar_webhook(dados):
 
     try:
 
+        # DIAGNÓSTICO DO WEBHOOK
+        print("========================================")
+        print("WEBHOOK MERCADO PAGO RECEBIDO")
+        print("Dados recebidos:", dados)
+        print("========================================")
+
         data = dados.get(
             "data",
             {}
@@ -302,18 +308,47 @@ def processar_webhook(dados):
             "id"
         )
 
+        print(
+            "Order ID recebido:",
+            order_id
+        )
+
         if not order_id:
+
+            print(
+                "Webhook recebido sem Order ID."
+            )
+
             return
+
+        print(
+            "Consultando Order:",
+            order_id
+        )
 
         order = consultar_order(
             order_id
+        )
+
+        print(
+            "Order consultada:",
+            order
         )
 
         status = order.get(
             "status"
         )
 
+        print(
+            "Status da Order:",
+            status
+        )
+
         if status != "processed":
+
+            print(
+                "Pagamento ainda não está como processed."
+            )
 
             return
 
@@ -324,9 +359,18 @@ def processar_webhook(dados):
             )
         )
 
+        print(
+            "External reference:",
+            external_reference
+        )
+
         if not external_reference.startswith(
             "telegram_"
         ):
+
+            print(
+                "External reference não pertence ao bot."
+            )
 
             return
 
@@ -336,11 +380,25 @@ def processar_webhook(dados):
 
         if len(partes) < 2:
 
+            print(
+                "External reference inválida."
+            )
+
             return
 
         chat_id = partes[1]
 
+        print(
+            "Chat ID do comprador:",
+            chat_id
+        )
+
         convite_vip = criar_convite_vip()
+
+        print(
+            "Convite VIP criado:",
+            convite_vip
+        )
 
         mensagem = (
             "✅ PAGAMENTO CONFIRMADO!\n\n"
@@ -418,22 +476,44 @@ def processar_webhook(dados):
             resposta.read()
 
         print(
-            "Pagamento confirmado:",
-            order_id,
+            "========================================"
+        )
+
+        print(
+            "PAGAMENTO CONFIRMADO:",
+            order_id
+        )
+
+        print(
             "Chat:",
             chat_id
         )
 
         print(
-            "Convite VIP criado:",
+            "Convite VIP:",
             convite_vip
+        )
+
+        print(
+            "========================================"
         )
 
     except Exception as erro:
 
         print(
-            "Erro no webhook:",
+            "========================================"
+        )
+
+        print(
+            "ERRO NO WEBHOOK:"
+        )
+
+        print(
             erro
+        )
+
+        print(
+            "========================================"
         )
 
 
@@ -486,6 +566,13 @@ class HealthHandler(
                     corpo
                     .decode("utf-8")
                 )
+
+                # DIAGNÓSTICO DO RECEBIMENTO
+                print("========================================")
+                print("REQUISIÇÃO WEBHOOK RECEBIDA")
+                print("Caminho:", self.path)
+                print("Dados:", dados)
+                print("========================================")
 
                 threading.Thread(
                     target=processar_webhook,
@@ -710,8 +797,6 @@ async def pagamento(
 
         return
 
-    # Marca que este usuário
-    # está aguardando o e-mail
     context.user_data[
         "aguardando_email"
     ] = True
@@ -742,8 +827,6 @@ async def receber_email(
     context
 ):
 
-    # Se o bot não estiver esperando
-    # um e-mail, ignora a mensagem
     if not context.user_data.get(
         "aguardando_email"
     ):
@@ -756,7 +839,6 @@ async def receber_email(
         .lower()
     )
 
-    # Validação básica
     padrao_email = (
         r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
     )
@@ -779,7 +861,6 @@ async def receber_email(
 
         return
 
-    # Para de esperar o e-mail
     context.user_data[
         "aguardando_email"
     ] = False
@@ -1071,7 +1152,6 @@ def main():
             "não configurado no Render."
         )
 
-    # Servidor HTTP para o Render
     threading.Thread(
         target=start_server,
         daemon=True
@@ -1083,10 +1163,6 @@ def main():
         .token(TOKEN)
         .build()
     )
-
-    # =========================
-    # COMANDOS
-    # =========================
 
     app.add_handler(
         CommandHandler(
@@ -1123,10 +1199,6 @@ def main():
         )
     )
 
-    # =========================
-    # RECEBER E-MAIL
-    # =========================
-
     app.add_handler(
 
         MessageHandler(
@@ -1138,10 +1210,6 @@ def main():
         )
 
     )
-
-    # =========================
-    # BOTÕES
-    # =========================
 
     app.add_handler(
 
