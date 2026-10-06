@@ -239,10 +239,6 @@ def processar_webhook(dados):
 
         chat_id = partes[1]
 
-        # =========================
-        # CRIAR CONVITE VIP
-        # =========================
-
         convite_vip = criar_convite_vip()
 
         mensagem = (
@@ -253,10 +249,6 @@ def processar_webhook(dados):
             "🔐 Seu acesso ao Grupo VIP está liberado.\n\n"
             "👇 Clique no botão abaixo para entrar:"
         )
-
-        # =========================
-        # ENVIAR MENSAGEM COM LINK
-        # =========================
 
         url = (
             "https://api.telegram.org/bot"
@@ -703,10 +695,13 @@ async def id_grupo(
 # TESTAR CONVITE VIP
 # =========================
 
-async def testevip(
-    update,
-    context
-):
+async def testevip(update, context):
+
+    # Primeiro confirma que o comando chegou
+    await update.message.reply_text(
+        "⏳ Recebi o comando /testevip!\n\n"
+        "🔐 Estou tentando criar o convite VIP..."
+    )
 
     try:
 
@@ -717,27 +712,28 @@ async def testevip(
         )
 
         await update.message.reply_text(
-
-            "✅ Convite VIP criado com sucesso!\n\n"
+            "✅ CONVITE VIP CRIADO!\n\n"
             "🔐 Link de teste:\n\n"
             f"{convite}\n\n"
             "⚠️ Este convite permite apenas 1 entrada."
-
         )
 
         print(
-            "Convite VIP de teste criado:",
+            "CONVITE VIP DE TESTE:",
             convite
         )
 
     except Exception as erro:
 
+        print(
+            "ERRO NO /testevip:",
+            erro
+        )
+
         await update.message.reply_text(
-
-            "❌ Não foi possível criar o convite VIP.\n\n"
-            "Erro:\n"
+            "❌ ERRO AO CRIAR O CONVITE VIP.\n\n"
+            "Detalhes do erro:\n\n"
             f"{erro}"
-
         )
 
 
@@ -797,7 +793,7 @@ def main():
     )
 
     # =========================
-    # NOVO COMANDO /testevip
+    # COMANDO /testevip
     # =========================
 
     app.add_handler(
