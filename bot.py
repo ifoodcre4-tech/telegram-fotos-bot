@@ -27,13 +27,11 @@ PRODUTO = "Pacote de fotos"
 
 ID_GRUPO_VIP = -5328427809
 
-
 # =========================
 # MERCADO PAGO
 # =========================
 
 def criar_pix(chat_id):
-
     url = "https://api.mercadopago.com/v1/orders"
 
     external_reference = (
@@ -81,27 +79,22 @@ def criar_pix(chat_id):
     )
 
     try:
-
         with urllib.request.urlopen(
             requisicao,
             timeout=30
         ) as resposta:
 
             conteudo = resposta.read().decode("utf-8")
-
             return json.loads(conteudo)
 
     except urllib.error.HTTPError as erro:
-
         corpo = erro.read().decode("utf-8")
-
         raise Exception(
             f"Mercado Pago HTTP {erro.code}: {corpo}"
         )
 
 
 def consultar_order(order_id):
-
     url = (
         "https://api.mercadopago.com/v1/orders/"
         + str(order_id)
@@ -123,7 +116,6 @@ def consultar_order(order_id):
     ) as resposta:
 
         conteudo = resposta.read().decode("utf-8")
-
         return json.loads(conteudo)
 
 
@@ -132,7 +124,6 @@ def consultar_order(order_id):
 # =========================
 
 def enviar_telegram(chat_id, mensagem):
-
     url = (
         "https://api.telegram.org/bot"
         + TOKEN
@@ -202,7 +193,6 @@ def criar_convite_vip():
         )
 
     if not resultado.get("ok"):
-
         raise Exception(
             "Erro ao criar convite VIP: "
             + str(resultado)
@@ -333,7 +323,9 @@ def processar_webhook(dados):
 # SERVIDOR DO RENDER
 # =========================
 
-class HealthHandler(BaseHTTPRequestHandler):
+class HealthHandler(
+    BaseHTTPRequestHandler
+):
 
     def do_GET(self):
 
@@ -398,7 +390,11 @@ class HealthHandler(BaseHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(
+        self,
+        format,
+        *args
+    ):
         pass
 
 
@@ -416,16 +412,17 @@ def start_server():
 # START
 # =========================
 
-async def start(update, context):
+async def start(
+    update,
+    context
+):
 
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "🛍️ Ver produtos",
-                callback_data="produtos"
-            )
-        ]
-    ]
+    keyboard = [[
+        InlineKeyboardButton(
+            "🛍️ Ver produtos",
+            callback_data="produtos"
+        )
+    ]]
 
     await update.message.reply_text(
         "👋 Olá! Bem-vindo à nossa loja!\n\n"
@@ -440,16 +437,17 @@ async def start(update, context):
 # PRODUTOS
 # =========================
 
-async def produtos(update, context):
+async def produtos(
+    update,
+    context
+):
 
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "🛒 Comprar — R$ 29,99",
-                callback_data="comprar"
-            )
-        ]
-    ]
+    keyboard = [[
+        InlineKeyboardButton(
+            "🛒 Comprar — R$ 29,99",
+            callback_data="comprar"
+        )
+    ]]
 
     mensagem = (
         "🛍️ *Produto disponível*\n\n"
@@ -485,33 +483,42 @@ async def produtos(update, context):
 # COMPRA
 # =========================
 
-async def comprar(update, context):
+async def comprar(
+    update,
+    context
+):
 
     query = update.callback_query
 
     await query.answer()
 
     keyboard = [
+
         [
             InlineKeyboardButton(
                 "💳 Continuar para pagamento",
                 callback_data="pagamento"
             )
         ],
+
         [
             InlineKeyboardButton(
                 "⬅️ Voltar aos produtos",
                 callback_data="produtos"
             )
         ],
+
     ]
 
     await query.edit_message_text(
+
         "🛒 *Pedido selecionado!*\n\n"
         "📸 Pacote de fotos\n"
         "💰 Total: *R$ 29,99*\n\n"
         "Clique abaixo para gerar o PIX.",
+
         parse_mode="Markdown",
+
         reply_markup=InlineKeyboardMarkup(
             keyboard
         ),
@@ -522,7 +529,10 @@ async def comprar(update, context):
 # PAGAMENTO
 # =========================
 
-async def pagamento(update, context):
+async def pagamento(
+    update,
+    context
+):
 
     query = update.callback_query
 
@@ -565,8 +575,7 @@ async def pagamento(update, context):
         if not payments:
 
             await query.message.reply_text(
-                "❌ O Mercado Pago não retornou "
-                "o pagamento."
+                "❌ O Mercado Pago não retornou o pagamento."
             )
 
             return
@@ -589,8 +598,7 @@ async def pagamento(update, context):
         if not qr_code:
 
             await query.message.reply_text(
-                "❌ O Mercado Pago não retornou "
-                "o código PIX."
+                "❌ O Mercado Pago não retornou o código PIX."
             )
 
             return
@@ -599,23 +607,19 @@ async def pagamento(update, context):
 
         if ticket_url:
 
-            botoes.append(
-                [
-                    InlineKeyboardButton(
-                        "💳 Abrir pagamento PIX",
-                        url=ticket_url
-                    )
-                ]
-            )
-
-        botoes.append(
-            [
+            botoes.append([
                 InlineKeyboardButton(
-                    "🛍️ Voltar aos produtos",
-                    callback_data="produtos"
+                    "💳 Abrir pagamento PIX",
+                    url=ticket_url
                 )
-            ]
-        )
+            ])
+
+        botoes.append([
+            InlineKeyboardButton(
+                "🛍️ Voltar aos produtos",
+                callback_data="produtos"
+            )
+        ])
 
         mensagem = (
             "✅ *PIX gerado com sucesso!*\n\n"
@@ -625,8 +629,7 @@ async def pagamento(update, context):
             f"`{qr_code}`\n\n"
             "Copie o código acima e cole no "
             "aplicativo do seu banco para pagar.\n\n"
-            "⚠️ Este pagamento está em ambiente "
-            "de TESTE."
+            "⚠️ Este pagamento está em ambiente de TESTE."
         )
 
         await query.message.reply_text(
@@ -645,9 +648,11 @@ async def pagamento(update, context):
     except Exception as erro:
 
         await query.message.reply_text(
+
             "❌ Não foi possível criar o pagamento.\n\n"
             "Erro do Mercado Pago:\n\n"
             f"{erro}"
+
         )
 
 
@@ -655,14 +660,20 @@ async def pagamento(update, context):
 # AJUDA
 # =========================
 
-async def ajuda(update, context):
+async def ajuda(
+    update,
+    context
+):
 
     await update.message.reply_text(
+
         "ℹ️ *Comandos disponíveis:*\n\n"
         "/start — Iniciar\n"
         "/produtos — Ver produtos\n"
         "/ajuda — Ajuda\n"
-        "/id — Ver ID do grupo",
+        "/id — Ver ID do grupo\n"
+        "/testevip — Criar convite VIP de teste",
+
         parse_mode="Markdown",
     )
 
@@ -671,7 +682,10 @@ async def ajuda(update, context):
 # ID DO GRUPO VIP
 # =========================
 
-async def id_grupo(update, context):
+async def id_grupo(
+    update,
+    context
+):
 
     chat = update.effective_chat
 
@@ -683,6 +697,48 @@ async def id_grupo(update, context):
         "ID DO GRUPO VIP:",
         chat.id
     )
+
+
+# =========================
+# TESTAR CONVITE VIP
+# =========================
+
+async def testevip(
+    update,
+    context
+):
+
+    try:
+
+        convite = await __import__(
+            "asyncio"
+        ).to_thread(
+            criar_convite_vip
+        )
+
+        await update.message.reply_text(
+
+            "✅ Convite VIP criado com sucesso!\n\n"
+            "🔐 Link de teste:\n\n"
+            f"{convite}\n\n"
+            "⚠️ Este convite permite apenas 1 entrada."
+
+        )
+
+        print(
+            "Convite VIP de teste criado:",
+            convite
+        )
+
+    except Exception as erro:
+
+        await update.message.reply_text(
+
+            "❌ Não foi possível criar o convite VIP.\n\n"
+            "Erro:\n"
+            f"{erro}"
+
+        )
 
 
 # =========================
@@ -713,19 +769,42 @@ def main():
     ).build()
 
     app.add_handler(
-        CommandHandler("start", start)
+        CommandHandler(
+            "start",
+            start
+        )
     )
 
     app.add_handler(
-        CommandHandler("produtos", produtos)
+        CommandHandler(
+            "produtos",
+            produtos
+        )
     )
 
     app.add_handler(
-        CommandHandler("ajuda", ajuda)
+        CommandHandler(
+            "ajuda",
+            ajuda
+        )
     )
 
     app.add_handler(
-        CommandHandler("id", id_grupo)
+        CommandHandler(
+            "id",
+            id_grupo
+        )
+    )
+
+    # =========================
+    # NOVO COMANDO /testevip
+    # =========================
+
+    app.add_handler(
+        CommandHandler(
+            "testevip",
+            testevip
+        )
     )
 
     app.add_handler(
