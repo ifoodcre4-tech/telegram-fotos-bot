@@ -5,6 +5,7 @@ import uuid
 import urllib.request
 import urllib.error
 import re
+import asyncio
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -44,6 +45,24 @@ VALOR = "29.99"
 PRODUTO = "Pacote de fotos"
 
 ID_GRUPO_VIP = -5328427809
+
+
+# =========================================================
+# FOTO DEMONSTRATIVA
+# =========================================================
+#
+# DEIXE ASSIM POR ENQUANTO.
+#
+# Depois que você enviar a foto para o Telegram,
+# vamos colocar o file_id dela aqui.
+#
+# Exemplo:
+#
+# FILE_ID_FOTO_DEMONSTRATIVA = "AgACAg..."
+#
+# =========================================================
+
+FILE_ID_FOTO_DEMONSTRATIVA = ""
 
 
 # =========================================================
@@ -438,23 +457,19 @@ def processar_webhook(
             "========================================"
         )
 
-
         data = dados.get(
             "data",
             {}
         )
 
-
         order_id = data.get(
             "id"
         )
-
 
         print(
             "Order ID recebido:",
             order_id
         )
-
 
         if not order_id:
 
@@ -463,11 +478,6 @@ def processar_webhook(
             )
 
             return
-
-
-        # =================================================
-        # EVITAR DUPLICAÇÃO
-        # =================================================
 
         if str(order_id) in ORDERS_PROCESSADAS:
 
@@ -478,34 +488,28 @@ def processar_webhook(
 
             return
 
-
         print(
             "Consultando Order:",
             order_id
         )
 
-
         order = consultar_order(
             order_id
         )
-
 
         print(
             "Order consultada:",
             order
         )
 
-
         status = order.get(
             "status"
         )
-
 
         print(
             "Status da Order:",
             status
         )
-
 
         if status != "processed":
 
@@ -515,7 +519,6 @@ def processar_webhook(
 
             return
 
-
         external_reference = order.get(
 
             "external_reference",
@@ -524,12 +527,10 @@ def processar_webhook(
 
         )
 
-
         print(
             "External reference:",
             external_reference
         )
-
 
         if not external_reference.startswith(
             "telegram_"
@@ -541,11 +542,9 @@ def processar_webhook(
 
             return
 
-
         partes = external_reference.split(
             "_"
         )
-
 
         if len(partes) < 2:
 
@@ -555,32 +554,19 @@ def processar_webhook(
 
             return
 
-
         chat_id = partes[1]
-
 
         print(
             "Chat ID do comprador:",
             chat_id
         )
 
-
-        # =================================================
-        # CRIAR CONVITE
-        # =================================================
-
         convite_vip = criar_convite_vip()
-
 
         print(
             "Convite VIP criado:",
             convite_vip
         )
-
-
-        # =================================================
-        # MENSAGEM FINAL
-        # =================================================
 
         mensagem = (
 
@@ -605,7 +591,6 @@ def processar_webhook(
 
         )
 
-
         enviar_mensagem_telegram(
 
             chat_id,
@@ -616,15 +601,9 @@ def processar_webhook(
 
         )
 
-
-        # =================================================
-        # MARCAR COMO PROCESSADA
-        # =================================================
-
         ORDERS_PROCESSADAS.add(
             str(order_id)
         )
-
 
         print(
             "========================================"
@@ -648,7 +627,6 @@ def processar_webhook(
         print(
             "========================================"
         )
-
 
     except Exception as erro:
 
@@ -677,7 +655,6 @@ class HealthHandler(
     BaseHTTPRequestHandler
 ):
 
-
     def do_GET(
         self
     ):
@@ -696,7 +673,6 @@ class HealthHandler(
         self.wfile.write(
             b"Bot online"
         )
-
 
     def do_POST(
         self
@@ -719,7 +695,6 @@ class HealthHandler(
             "========================================"
         )
 
-
         try:
 
             tamanho = int(
@@ -734,24 +709,16 @@ class HealthHandler(
 
             )
 
-
             corpo = self.rfile.read(
                 tamanho
             )
-
 
             print(
                 "Corpo recebido:",
                 corpo
             )
 
-
             dados = {}
-
-
-            # =================================================
-            # JSON
-            # =================================================
 
             if corpo:
 
@@ -771,11 +738,6 @@ class HealthHandler(
                         erro
                     )
 
-
-            # =================================================
-            # PARÂMETROS DA URL
-            # =================================================
-
             url = urlparse(
                 self.path
             )
@@ -784,7 +746,6 @@ class HealthHandler(
                 url.query
             )
 
-
             order_id = parametros.get(
 
                 "data.id",
@@ -792,11 +753,6 @@ class HealthHandler(
                 [None]
 
             )[0]
-
-
-            # =================================================
-            # CASO O ID VENHA NA URL
-            # =================================================
 
             if order_id and not dados:
 
@@ -821,11 +777,6 @@ class HealthHandler(
 
                 }
 
-
-            # =================================================
-            # CASO O ID VENHA NO JSON
-            # =================================================
-
             if not order_id and dados:
 
                 data_webhook = dados.get(
@@ -848,7 +799,6 @@ class HealthHandler(
                         "id"
                     )
 
-
             print(
                 "========================================"
             )
@@ -870,7 +820,6 @@ class HealthHandler(
                 "========================================"
             )
 
-
             if dados:
 
                 threading.Thread(
@@ -883,14 +832,12 @@ class HealthHandler(
 
                 ).start()
 
-
         except Exception as erro:
 
             print(
                 "ERRO RECEBENDO WEBHOOK:",
                 erro
             )
-
 
         self.send_response(
             200
@@ -906,7 +853,6 @@ class HealthHandler(
         self.wfile.write(
             b"OK"
         )
-
 
     def log_message(
         self,
@@ -934,7 +880,7 @@ def start_server():
 
 
 # =========================================================
-# /START
+# TELA INICIAL
 # =========================================================
 
 async def start(
@@ -948,9 +894,21 @@ async def start(
 
             InlineKeyboardButton(
 
-                "🛍️ VER PRODUTO",
+                "📸 VER PACOTE",
 
                 callback_data="produtos"
+
+            )
+
+        ],
+
+        [
+
+            InlineKeyboardButton(
+
+                "💳 COMPRAR AGORA",
+
+                callback_data="comprar"
 
             )
 
@@ -958,38 +916,130 @@ async def start(
 
     ]
 
-
     mensagem = (
 
-        "👋 Bem-vindo à nossa loja!\n\n"
+        "👋 <b>Olá! Seja bem-vindo(a)</b>\n\n"
 
-        "🔞 Conteúdo exclusivo para maiores "
-        "de 18 anos.\n\n"
+        "🔥 <b>CONTEÚDO EXCLUSIVO</b>\n\n"
 
-        "📸 Temos um pacote de fotos "
-        "disponível.\n\n"
+        "Acesso ao nosso conteúdo privado "
+        "diretamente pelo Telegram.\n\n"
 
-        "💰 Valor: R$ 29,99\n\n"
-
-        "👇 Clique abaixo para conhecer."
+        "📦 Pacote disponível\n"
+        "💰 <b>R$ 29,99</b>\n"
+        "🔐 Acesso privado após confirmação "
+        "do pagamento."
 
     )
 
+    # -----------------------------------------------------
+    # Se já tivermos a foto demonstrativa,
+    # enviamos foto + legenda + botões.
+    # -----------------------------------------------------
 
-    await update.message.reply_text(
+    if FILE_ID_FOTO_DEMONSTRATIVA:
 
-        mensagem,
+        await update.message.reply_photo(
 
-        reply_markup=
-            InlineKeyboardMarkup(
+            photo=FILE_ID_FOTO_DEMONSTRATIVA,
+
+            caption=mensagem,
+
+            parse_mode="HTML",
+
+            reply_markup=InlineKeyboardMarkup(
                 keyboard
             )
+
+        )
+
+    else:
+
+        await update.message.reply_text(
+
+            mensagem,
+
+            parse_mode="HTML",
+
+            reply_markup=InlineKeyboardMarkup(
+                keyboard
+            )
+
+        )
+
+
+# =========================================================
+# VOLTAR PARA INÍCIO
+# =========================================================
+
+async def inicio(
+    update,
+    context
+):
+
+    query = update.callback_query
+
+    await query.answer()
+
+    keyboard = [
+
+        [
+
+            InlineKeyboardButton(
+
+                "📸 VER PACOTE",
+
+                callback_data="produtos"
+
+            )
+
+        ],
+
+        [
+
+            InlineKeyboardButton(
+
+                "💳 COMPRAR AGORA",
+
+                callback_data="comprar"
+
+            )
+
+        ]
+
+    ]
+
+    mensagem = (
+
+        "👋 <b>Olá! Seja bem-vindo(a)</b>\n\n"
+
+        "🔥 <b>CONTEÚDO EXCLUSIVO</b>\n\n"
+
+        "Acesso ao nosso conteúdo privado "
+        "diretamente pelo Telegram.\n\n"
+
+        "📦 Pacote disponível\n"
+        "💰 <b>R$ 29,99</b>\n"
+        "🔐 Acesso privado após confirmação "
+        "do pagamento."
+
+    )
+
+    await query.edit_message_text(
+
+        text=mensagem,
+
+        parse_mode="HTML",
+
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        )
 
     )
 
 
 # =========================================================
-# PRODUTOS
+# TELA DO PACOTE
 # =========================================================
 
 async def produtos(
@@ -1003,7 +1053,7 @@ async def produtos(
 
             InlineKeyboardButton(
 
-                "🛒 COMPRAR — R$ 29,99",
+                "💳 COMPRAR AGORA",
 
                 callback_data="comprar"
 
@@ -1015,9 +1065,21 @@ async def produtos(
 
             InlineKeyboardButton(
 
-                "ℹ️ COMO FUNCIONA",
+                "ℹ️ MAIS INFORMAÇÕES",
 
                 callback_data="info"
+
+            )
+
+        ],
+
+        [
+
+            InlineKeyboardButton(
+
+                "⬅️ VOLTAR",
+
+                callback_data="inicio"
 
             )
 
@@ -1025,42 +1087,39 @@ async def produtos(
 
     ]
 
-
     mensagem = (
 
-        "📸 *PACOTE DE FOTOS*\n\n"
+        "📸 <b>PACOTE EXCLUSIVO</b>\n\n"
 
-        "✨ Conteúdo exclusivo\n"
+        "✨ Conteúdo privado\n"
+        "📦 Pacote completo\n"
+        "🔐 Acesso ao grupo privado\n"
+        "⚡ Liberação automática após pagamento\n\n"
 
-        "🔐 Acesso através do Grupo VIP\n\n"
-
-        "💰 *R$ 29,99*\n\n"
-
-        "Após o pagamento ser confirmado, "
-        "o acesso ao Grupo VIP será enviado "
-        "automaticamente nesta conversa.\n\n"
+        "💰 <b>R$ 29,99</b>\n\n"
 
         "🔞 Conteúdo destinado exclusivamente "
-        "a maiores de 18 anos."
+        "a maiores de 18 anos.\n\n"
+
+        "👇 Escolha uma opção abaixo."
 
     )
 
-
     if update.callback_query:
 
-        await update.callback_query.answer()
+        query = update.callback_query
 
+        await query.answer()
 
-        await update.callback_query.edit_message_text(
+        await query.edit_message_text(
 
-            mensagem,
+            text=mensagem,
 
-            parse_mode="Markdown",
+            parse_mode="HTML",
 
-            reply_markup=
-                InlineKeyboardMarkup(
-                    keyboard
-                )
+            reply_markup=InlineKeyboardMarkup(
+                keyboard
+            )
 
         )
 
@@ -1070,12 +1129,11 @@ async def produtos(
 
             mensagem,
 
-            parse_mode="Markdown",
+            parse_mode="HTML",
 
-            reply_markup=
-                InlineKeyboardMarkup(
-                    keyboard
-                )
+            reply_markup=InlineKeyboardMarkup(
+                keyboard
+            )
 
         )
 
@@ -1093,14 +1151,13 @@ async def info(
 
     await query.answer()
 
-
     keyboard = [
 
         [
 
             InlineKeyboardButton(
 
-                "🛒 COMPRAR",
+                "💳 COMPRAR AGORA",
 
                 callback_data="comprar"
 
@@ -1122,10 +1179,9 @@ async def info(
 
     ]
 
-
     mensagem = (
 
-        "ℹ️ *COMO FUNCIONA*\n\n"
+        "ℹ️ <b>COMO FUNCIONA</b>\n\n"
 
         "1️⃣ Escolha o pacote.\n\n"
 
@@ -1148,17 +1204,15 @@ async def info(
 
     )
 
-
     await query.edit_message_text(
 
         mensagem,
 
-        parse_mode="Markdown",
+        parse_mode="HTML",
 
-        reply_markup=
-            InlineKeyboardMarkup(
-                keyboard
-            )
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        )
 
     )
 
@@ -1175,7 +1229,6 @@ async def comprar(
     query = update.callback_query
 
     await query.answer()
-
 
     keyboard = [
 
@@ -1205,14 +1258,13 @@ async def comprar(
 
     ]
 
-
     mensagem = (
 
-        "🛒 *PEDIDO*\n\n"
+        "🛒 <b>PEDIDO</b>\n\n"
 
-        "📸 Produto: *Pacote de fotos*\n"
+        "📸 Produto: <b>Pacote de fotos</b>\n"
 
-        "💰 Total: *R$ 29,99*\n\n"
+        "💰 Total: <b>R$ 29,99</b>\n\n"
 
         "🔐 Após a confirmação do pagamento, "
         "você receberá automaticamente "
@@ -1223,17 +1275,15 @@ async def comprar(
 
     )
 
-
     await query.edit_message_text(
 
         mensagem,
 
-        parse_mode="Markdown",
+        parse_mode="HTML",
 
-        reply_markup=
-            InlineKeyboardMarkup(
-                keyboard
-            )
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        )
 
     )
 
@@ -1251,7 +1301,6 @@ async def pagamento(
 
     await query.answer()
 
-
     if not MP_TOKEN:
 
         await query.message.reply_text(
@@ -1263,26 +1312,24 @@ async def pagamento(
 
         return
 
-
     context.user_data[
         "aguardando_email"
     ] = True
 
-
     await query.message.reply_text(
 
-        "📧 *E-MAIL PARA PAGAMENTO*\n\n"
+        "📧 <b>E-MAIL PARA PAGAMENTO</b>\n\n"
 
         "Digite seu e-mail abaixo.\n\n"
 
         "Exemplo:\n"
-        "`seuemail@gmail.com`\n\n"
+        "<code>seuemail@gmail.com</code>\n\n"
 
         "🔒 O e-mail será utilizado "
         "para identificar o comprador "
         "no Mercado Pago.",
 
-        parse_mode="Markdown"
+        parse_mode="HTML"
 
     )
 
@@ -1302,7 +1349,6 @@ async def receber_email(
 
         return
 
-
     email = (
 
         update.message.text
@@ -1313,13 +1359,11 @@ async def receber_email(
 
     )
 
-
     padrao_email = (
 
         r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
     )
-
 
     if not re.match(
 
@@ -1342,28 +1386,23 @@ async def receber_email(
 
         return
 
-
     context.user_data[
         "aguardando_email"
     ] = False
 
-
     await update.message.reply_text(
 
-        "⏳ *GERANDO PIX...*\n\n"
+        "⏳ <b>GERANDO PIX...</b>\n\n"
 
         "Aguarde alguns segundos.",
 
-        parse_mode="Markdown"
+        parse_mode="HTML"
 
     )
 
-
     try:
 
-        resultado = await __import__(
-            "asyncio"
-        ).to_thread(
+        resultado = await asyncio.to_thread(
 
             criar_pix,
 
@@ -1373,11 +1412,9 @@ async def receber_email(
 
         )
 
-
         order_id = resultado.get(
             "id"
         )
-
 
         transactions = resultado.get(
 
@@ -1387,7 +1424,6 @@ async def receber_email(
 
         )
 
-
         payments = transactions.get(
 
             "payments",
@@ -1395,7 +1431,6 @@ async def receber_email(
             []
 
         )
-
 
         if not payments:
 
@@ -1408,9 +1443,7 @@ async def receber_email(
 
             return
 
-
         payment = payments[0]
-
 
         payment_method = payment.get(
 
@@ -1420,20 +1453,17 @@ async def receber_email(
 
         )
 
-
         qr_code = payment_method.get(
 
             "qr_code"
 
         )
 
-
         ticket_url = payment_method.get(
 
             "ticket_url"
 
         )
-
 
         if not qr_code:
 
@@ -1446,9 +1476,7 @@ async def receber_email(
 
             return
 
-
         botoes = []
-
 
         if ticket_url:
 
@@ -1468,14 +1496,13 @@ async def receber_email(
 
             )
 
-
         botoes.append(
 
             [
 
                 InlineKeyboardButton(
 
-                    "🛍️ VER PRODUTO",
+                    "📸 VER PACOTE",
 
                     callback_data="produtos"
 
@@ -1485,24 +1512,23 @@ async def receber_email(
 
         )
 
-
         mensagem = (
 
-            "✅ *PIX GERADO!*\n\n"
+            "✅ <b>PIX GERADO!</b>\n\n"
 
-            "📸 *Produto:* Pacote de fotos\n"
+            "📸 <b>Produto:</b> Pacote de fotos\n"
 
-            "💰 *Valor:* R$ 29,99\n\n"
+            "💰 <b>Valor:</b> R$ 29,99\n\n"
 
-            "📧 *E-mail:*\n"
+            "📧 <b>E-mail:</b>\n"
             + email
             + "\n\n"
 
-            "📋 *PIX COPIA E COLA:*\n\n"
+            "📋 <b>PIX COPIA E COLA:</b>\n\n"
 
-            "`"
+            "<code>"
             + qr_code
-            + "`\n\n"
+            + "</code>\n\n"
 
             "👆 Copie o código acima "
             "e cole no aplicativo do seu banco.\n\n"
@@ -1516,12 +1542,11 @@ async def receber_email(
 
         )
 
-
         await update.message.reply_text(
 
             mensagem,
 
-            parse_mode="Markdown",
+            parse_mode="HTML",
 
             reply_markup=
                 InlineKeyboardMarkup(
@@ -1529,7 +1554,6 @@ async def receber_email(
                 )
 
         )
-
 
         print(
             "========================================"
@@ -1554,7 +1578,6 @@ async def receber_email(
             "========================================"
         )
 
-
     except Exception as erro:
 
         await update.message.reply_text(
@@ -1567,7 +1590,6 @@ async def receber_email(
             + str(erro)
 
         )
-
 
         print(
 
@@ -1589,12 +1611,10 @@ async def ajuda(
 
     await update.message.reply_text(
 
-        "ℹ️ *AJUDA*\n\n"
+        "ℹ️ <b>AJUDA</b>\n\n"
 
         "/start — Abrir loja\n"
-
-        "/produtos — Ver produto\n"
-
+        "/produtos — Ver pacote\n"
         "/ajuda — Mostrar ajuda\n\n"
 
         "💳 O pagamento é realizado "
@@ -1604,7 +1624,7 @@ async def ajuda(
         "o acesso VIP é enviado "
         "automaticamente.",
 
-        parse_mode="Markdown"
+        parse_mode="HTML"
 
     )
 
@@ -1620,14 +1640,12 @@ async def id_grupo(
 
     chat = update.effective_chat
 
-
     await update.message.reply_text(
 
         "🆔 ID deste grupo:\n\n"
         + str(chat.id)
 
     )
-
 
     print(
 
@@ -1653,21 +1671,17 @@ async def testevip(
 
     )
 
-
     try:
 
-        convite = await __import__(
-            "asyncio"
-        ).to_thread(
+        convite = await asyncio.to_thread(
 
             criar_convite_vip
 
         )
 
-
         await update.message.reply_text(
 
-            "✅ *CONVITE VIP CRIADO!*\n\n"
+            "✅ <b>CONVITE VIP CRIADO!</b>\n\n"
 
             "🔐 Link:\n\n"
 
@@ -1677,10 +1691,9 @@ async def testevip(
             "⚠️ Este convite permite "
             "apenas 1 entrada.",
 
-            parse_mode="Markdown"
+            parse_mode="HTML"
 
         )
-
 
         print(
 
@@ -1689,7 +1702,6 @@ async def testevip(
             convite
 
         )
-
 
     except Exception as erro:
 
@@ -1700,7 +1712,6 @@ async def testevip(
             erro
 
         )
-
 
         await update.message.reply_text(
 
@@ -1727,7 +1738,6 @@ def main():
 
         )
 
-
     if not MP_TOKEN:
 
         raise RuntimeError(
@@ -1737,7 +1747,6 @@ def main():
 
         )
 
-
     threading.Thread(
 
         target=start_server,
@@ -1745,7 +1754,6 @@ def main():
         daemon=True
 
     ).start()
-
 
     app = (
 
@@ -1759,8 +1767,9 @@ def main():
 
     )
 
-
+    # =====================================================
     # COMANDOS
+    # =====================================================
 
     app.add_handler(
 
@@ -1774,7 +1783,6 @@ def main():
 
     )
 
-
     app.add_handler(
 
         CommandHandler(
@@ -1786,7 +1794,6 @@ def main():
         )
 
     )
-
 
     app.add_handler(
 
@@ -1800,7 +1807,6 @@ def main():
 
     )
 
-
     app.add_handler(
 
         CommandHandler(
@@ -1812,7 +1818,6 @@ def main():
         )
 
     )
-
 
     app.add_handler(
 
@@ -1826,8 +1831,9 @@ def main():
 
     )
 
-
+    # =====================================================
     # E-MAIL
+    # =====================================================
 
     app.add_handler(
 
@@ -1842,8 +1848,9 @@ def main():
 
     )
 
-
+    # =====================================================
     # BOTÕES
+    # =====================================================
 
     app.add_handler(
 
@@ -1857,6 +1864,17 @@ def main():
 
     )
 
+    app.add_handler(
+
+        CallbackQueryHandler(
+
+            inicio,
+
+            pattern="^inicio$"
+
+        )
+
+    )
 
     app.add_handler(
 
@@ -1870,7 +1888,6 @@ def main():
 
     )
 
-
     app.add_handler(
 
         CallbackQueryHandler(
@@ -1883,7 +1900,6 @@ def main():
 
     )
 
-
     app.add_handler(
 
         CallbackQueryHandler(
@@ -1895,7 +1911,6 @@ def main():
         )
 
     )
-
 
     print(
         "========================================"
@@ -1918,7 +1933,6 @@ def main():
         "========================================"
     )
 
-
     app.run_polling()
 
 
@@ -1928,4 +1942,4 @@ def main():
 
 if __name__ == "__main__":
 
-    main()
+    main()k
