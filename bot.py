@@ -883,90 +883,68 @@ def start_server():
 # TELA INICIAL
 # =========================================================
 
-async def start(
-    update,
-    context
-):
-
+async def start(update, context):
     keyboard = [
-
         [
-
             InlineKeyboardButton(
-
                 "📸 VER PACOTE",
-
                 callback_data="produtos"
-
             )
-
         ],
-
         [
-
             InlineKeyboardButton(
-
                 "💳 COMPRAR AGORA",
-
                 callback_data="comprar"
-
             )
-
         ]
-
     ]
 
     mensagem = (
-
         "👋 <b>Olá! Seja bem-vindo(a)</b>\n\n"
-
         "🔥 <b>CONTEÚDO EXCLUSIVO</b>\n\n"
-
         "Acesso ao nosso conteúdo privado "
         "diretamente pelo Telegram.\n\n"
-
         "📦 Pacote disponível\n"
         "💰 <b>R$ 29,99</b>\n"
         "🔐 Acesso privado após confirmação "
         "do pagamento."
-
     )
 
-    # -----------------------------------------------------
-    # Se já tivermos a foto demonstrativa,
-    # enviamos foto + legenda + botões.
-    # -----------------------------------------------------
+    markup = InlineKeyboardMarkup(keyboard)
 
-    if FILE_ID_FOTO_DEMONSTRATIVA:
+    # Se inicio.jpg estiver no repositório do bot, envia a foto original
+    # junto com a mensagem e os botões. Se não estiver, usa texto como reserva.
+    caminho_foto = os.path.join(os.path.dirname(__file__), "inicio.jpg")
 
-        await update.message.reply_photo(
-
-            photo=FILE_ID_FOTO_DEMONSTRATIVA,
-
-            caption=mensagem,
-
-            parse_mode="HTML",
-
-            reply_markup=InlineKeyboardMarkup(
-                keyboard
+    try:
+        if os.path.isfile(caminho_foto):
+            with open(caminho_foto, "rb") as foto:
+                await update.message.reply_photo(
+                    photo=foto,
+                    caption=mensagem,
+                    parse_mode="HTML",
+                    reply_markup=markup
+                )
+        elif FILE_ID_FOTO_DEMONSTRATIVA:
+            await update.message.reply_photo(
+                photo=FILE_ID_FOTO_DEMONSTRATIVA,
+                caption=mensagem,
+                parse_mode="HTML",
+                reply_markup=markup
             )
-
-        )
-
-    else:
-
+        else:
+            await update.message.reply_text(
+                mensagem,
+                parse_mode="HTML",
+                reply_markup=markup
+            )
+    except Exception as erro:
+        print("Erro ao enviar foto inicial:", erro)
         await update.message.reply_text(
-
             mensagem,
-
             parse_mode="HTML",
-
-            reply_markup=InlineKeyboardMarkup(
-                keyboard
-            )
-
+            reply_markup=markup
         )
-
 
 # =========================================================
 # VOLTAR PARA INÍCIO
