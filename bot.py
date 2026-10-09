@@ -911,40 +911,26 @@ async def start(update, context):
     )
 
     markup = InlineKeyboardMarkup(keyboard)
-
-    # Se inicio.jpg estiver no repositório do bot, envia a foto original
-    # junto com a mensagem e os botões. Se não estiver, usa texto como reserva.
     caminho_foto = os.path.join(os.path.dirname(__file__), "inicio.jpg")
 
+    # A foto fica separada da mensagem com botões. Assim, os botões
+    # editam uma mensagem de texto e não causam erro no Telegram.
     try:
         if os.path.isfile(caminho_foto):
             with open(caminho_foto, "rb") as foto:
-                await update.message.reply_photo(
-                    photo=foto,
-                    caption=mensagem,
-                    parse_mode="HTML",
-                    reply_markup=markup
-                )
+                await update.message.reply_photo(photo=foto)
         elif FILE_ID_FOTO_DEMONSTRATIVA:
             await update.message.reply_photo(
-                photo=FILE_ID_FOTO_DEMONSTRATIVA,
-                caption=mensagem,
-                parse_mode="HTML",
-                reply_markup=markup
-            )
-        else:
-            await update.message.reply_text(
-                mensagem,
-                parse_mode="HTML",
-                reply_markup=markup
+                photo=FILE_ID_FOTO_DEMONSTRATIVA
             )
     except Exception as erro:
         print("Erro ao enviar foto inicial:", erro)
-        await update.message.reply_text(
-            mensagem,
-            parse_mode="HTML",
-            reply_markup=markup
-        )
+
+    await update.message.reply_text(
+        mensagem,
+        parse_mode="HTML",
+        reply_markup=markup
+    )
 
 # =========================================================
 # VOLTAR PARA INÍCIO
