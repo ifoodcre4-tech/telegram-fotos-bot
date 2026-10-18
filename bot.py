@@ -911,17 +911,12 @@ async def start(update, context):
     )
 
     markup = InlineKeyboardMarkup(keyboard)
-    pasta = os.path.dirname(__file__)
-    caminho_gif = os.path.join(pasta, "IMG_0510.gif")
-    caminho_foto = os.path.join(pasta, "inicio.jpg")
+    caminho_foto = os.path.join(os.path.dirname(__file__), "inicio.jpg")
 
-    # Envia o GIF se estiver no repositório; se não, tenta a foto antiga.
-    # A mensagem com os botões fica separada para preservar os botões de compra.
+    # A foto fica separada da mensagem com botões. Assim, os botões
+    # editam uma mensagem de texto e não causam erro no Telegram.
     try:
-        if os.path.isfile(caminho_gif):
-            with open(caminho_gif, "rb") as gif:
-                await update.message.reply_animation(animation=gif)
-        elif os.path.isfile(caminho_foto):
+        if os.path.isfile(caminho_foto):
             with open(caminho_foto, "rb") as foto:
                 await update.message.reply_photo(photo=foto)
         elif FILE_ID_FOTO_DEMONSTRATIVA:
@@ -929,7 +924,7 @@ async def start(update, context):
                 photo=FILE_ID_FOTO_DEMONSTRATIVA
             )
     except Exception as erro:
-        print("Erro ao enviar imagem inicial:", erro)
+        print("Erro ao enviar foto inicial:", erro)
 
     await update.message.reply_text(
         mensagem,
