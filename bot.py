@@ -40,9 +40,13 @@ PORT = int(
     )
 )
 
-VALOR = "29.99"
-
-PRODUTO = "Pacote de fotos"
+VALOR_MENSAL = "29.99"
+VALOR_TRIMESTRAL = "64.90"
+PRODUTO = "Acesso ao Grupo VIP"
+PLANOS = {
+    "mensal": {"nome": "1 mês VIP", "valor": VALOR_MENSAL, "exibicao": "R$ 29,99"},
+    "trimestral": {"nome": "3 meses VIP", "valor": VALOR_TRIMESTRAL, "exibicao": "R$ 64,90"},
+}
 
 ID_GRUPO_VIP = -5328427809
 
@@ -78,18 +82,19 @@ ORDERS_PROCESSADAS = set()
 
 def criar_pix(
     chat_id,
-    email
+    email,
+    plano="mensal"
 ):
 
     url = (
         "https://api.mercadopago.com/v1/orders"
     )
 
+    if plano not in PLANOS:
+        raise ValueError("Plano inválido.")
+    valor = PLANOS[plano]["valor"]
     external_reference = (
-        "telegram_"
-        + str(chat_id)
-        + "_"
-        + str(uuid.uuid4())
+        "telegram_" + str(chat_id) + "_" + plano + "_" + str(uuid.uuid4())
     )
 
     dados = {
@@ -101,7 +106,7 @@ def criar_pix(
             external_reference,
 
         "total_amount":
-            VALOR,
+            valor,
 
         "processing_mode":
             "automatic",
@@ -119,7 +124,7 @@ def criar_pix(
                 {
 
                     "amount":
-                        VALOR,
+                        valor,
 
                     "payment_method": {
 
@@ -555,6 +560,8 @@ def processar_webhook(
             return
 
         chat_id = partes[1]
+        plano = partes[2] if len(partes) >= 4 and partes[2] in PLANOS else "mensal"
+        dados_plano = PLANOS[plano]
 
         print(
             "Chat ID do comprador:",
@@ -572,11 +579,11 @@ def processar_webhook(
 
             "🎉 PAGAMENTO CONFIRMADO!\n\n"
 
-            "📸 Produto: "
-            + PRODUTO
+            "📸 Plano: "
+            + dados_plano["nome"]
             + "\n"
 
-            "💰 Valor: R$ 29,99\n\n"
+            "💰 Valor: " + dados_plano["exibicao"] + "\n\n"
 
             "✅ Seu pagamento foi aprovado!\n\n"
 
@@ -885,38 +892,22 @@ def start_server():
 
 async def start(update, context):
     keyboard = [
-        [
-            InlineKeyboardButton(
-                "📸 VER PACOTE",
-                callback_data="produtos"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "💳 COMPRAR AGORA",
-                callback_data="comprar"
-            )
-        ]
+        [InlineKeyboardButton("🔥 1 mês VIP — R$ 29,99", callback_data="plano_mensal")],
+        [InlineKeyboardButton("🔥 3 meses VIP — R$ 64,90", callback_data="plano_trimestral")],
     ]
-
     mensagem = (
-        "👋 <b>Olá! Seja bem-vindo(a)</b>\n\n"
-        "🔥 <b>CONTEÚDO EXCLUSIVO</b>\n\n"
-        "Acesso ao nosso conteúdo privado "
-        "diretamente pelo Telegram.\n\n"
-        "📦 Pacote disponível\n"
-        "💰 <b>R$ 29,99</b>\n"
-        "🔐 Acesso privado após confirmação "
-        "do pagamento."
+        "Oiii amor 🥰\n\n"
+        "Vem fazer parte do meu Grupo VIP! 😈\n\n"
+        "Aqui dentro você tem acesso ao conteúdo exclusivo para maiores de 18 anos. 🔥🔞\n\n"
+        "Para ter acesso ao grupo exclusivo, basta escolher um dos planos abaixo: 👇"
     )
-
-    markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        mensagem,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
     pasta = os.path.dirname(__file__)
     caminho_gif = os.path.join(pasta, "IMG_0510.mp4")
     caminho_foto = os.path.join(pasta, "inicio.jpg")
-
-    # Envia o vídeo MP4 se estiver no repositório; se não, tenta a foto antiga.
-    # A mensagem com os botões fica separada para preservar os botões de compra.
     try:
         if os.path.isfile(caminho_gif):
             with open(caminho_gif, "rb") as video:
@@ -925,87 +916,50 @@ async def start(update, context):
             with open(caminho_foto, "rb") as foto:
                 await update.message.reply_photo(photo=foto)
         elif FILE_ID_FOTO_DEMONSTRATIVA:
-            await update.message.reply_photo(
-                photo=FILE_ID_FOTO_DEMONSTRATIVA
-            )
+            await update.message.reply_photo(photo=FILE_ID_FOTO_DEMONSTRATIVA)
     except Exception as erro:
-        print("Erro ao enviar imagem inicial:", erro)
-
-    await update.message.reply_text(
-        mensagem,
-        parse_mode="HTML",
-        reply_markup=markup
-    )
+        print("Erro ao enviar GIF/vídeo inicial:", erro)
 
 # =========================================================
 # VOLTAR PARA INÍCIO
 # =========================================================
 
-async def inicio(
-    update,
-    context
-):
-
+async def inicio(update, context):
     query = update.callback_query
-
     await query.answer()
-
     keyboard = [
-
-        [
-
-            InlineKeyboardButton(
-
-                "📸 VER PACOTE",
-
-                callback_data="produtos"
-
-            )
-
-        ],
-
-        [
-
-            InlineKeyboardButton(
-
-                "💳 COMPRAR AGORA",
-
-                callback_data="comprar"
-
-            )
-
-        ]
-
+        [InlineKeyboardButton("🔥 1 mês VIP — R$ 29,99", callback_data="plano_mensal")],
+        [InlineKeyboardButton("🔥 3 meses VIP — R$ 64,90", callback_data="plano_trimestral")],
     ]
-
     mensagem = (
-
-        "👋 <b>Olá! Seja bem-vindo(a)</b>\n\n"
-
-        "🔥 <b>CONTEÚDO EXCLUSIVO</b>\n\n"
-
-        "Acesso ao nosso conteúdo privado "
-        "diretamente pelo Telegram.\n\n"
-
-        "📦 Pacote disponível\n"
-        "💰 <b>R$ 29,99</b>\n"
-        "🔐 Acesso privado após confirmação "
-        "do pagamento."
-
+        "Oiii amor 🥰\n\n"
+        "Vem fazer parte do meu Grupo VIP! 😈\n\n"
+        "Conteúdo exclusivo para maiores de 18 anos. 🔥🔞\n\n"
+        "Escolha seu plano abaixo: 👇"
     )
+    await query.edit_message_text(text=mensagem, reply_markup=InlineKeyboardMarkup(keyboard))
 
+
+async def escolher_plano(update, context):
+    query = update.callback_query
+    await query.answer()
+    plano = query.data.replace("plano_", "", 1)
+    if plano not in PLANOS:
+        await query.message.reply_text("❌ Plano inválido. Use /start para tentar novamente.")
+        return
+    context.user_data["plano"] = plano
+    dados = PLANOS[plano]
+    keyboard = [
+        [InlineKeyboardButton("💳 CONTINUAR PARA PAGAMENTO", callback_data="pagamento")],
+        [InlineKeyboardButton("⬅️ VOLTAR AOS PLANOS", callback_data="inicio")],
+    ]
     await query.edit_message_text(
-
-        text=mensagem,
-
-        parse_mode="HTML",
-
-        reply_markup=InlineKeyboardMarkup(
-            keyboard
-        )
-
+        "🛒 PEDIDO\n\n"
+        "📦 Plano: " + dados["nome"] + "\n"
+        "💰 Total: " + dados["exibicao"] + "\n\n"
+        "Após a confirmação do PIX, você receberá um convite individual para o Grupo VIP.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
 
 # =========================================================
 # TELA DO PACOTE
@@ -1065,7 +1019,8 @@ async def produtos(
         "🔐 Acesso ao grupo privado\n"
         "⚡ Liberação automática após pagamento\n\n"
 
-        "💰 <b>R$ 29,99</b>\n\n"
+        "💰 <b>1 mês: R$ 29,99</b>\n"
+        "💰 <b>3 meses: R$ 64,90</b>\n\n"
 
         "🔞 Conteúdo destinado exclusivamente "
         "a maiores de 18 anos.\n\n"
@@ -1190,72 +1145,18 @@ async def info(
 # COMPRA
 # =========================================================
 
-async def comprar(
-    update,
-    context
-):
-
+async def comprar(update, context):
     query = update.callback_query
-
     await query.answer()
-
     keyboard = [
-
-        [
-
-            InlineKeyboardButton(
-
-                "💳 CONTINUAR PARA PAGAMENTO",
-
-                callback_data="pagamento"
-
-            )
-
-        ],
-
-        [
-
-            InlineKeyboardButton(
-
-                "⬅️ VOLTAR",
-
-                callback_data="produtos"
-
-            )
-
-        ]
-
+        [InlineKeyboardButton("🔥 1 mês VIP — R$ 29,99", callback_data="plano_mensal")],
+        [InlineKeyboardButton("🔥 3 meses VIP — R$ 64,90", callback_data="plano_trimestral")],
+        [InlineKeyboardButton("⬅️ VOLTAR", callback_data="produtos")],
     ]
-
-    mensagem = (
-
-        "🛒 <b>PEDIDO</b>\n\n"
-
-        "📸 Produto: <b>Pacote de fotos</b>\n"
-
-        "💰 Total: <b>R$ 29,99</b>\n\n"
-
-        "🔐 Após a confirmação do pagamento, "
-        "você receberá automaticamente "
-        "um convite individual para o "
-        "Grupo VIP.\n\n"
-
-        "Clique abaixo para continuar."
-
-    )
-
     await query.edit_message_text(
-
-        mensagem,
-
-        parse_mode="HTML",
-
-        reply_markup=InlineKeyboardMarkup(
-            keyboard
-        )
-
+        "Escolha o plano que deseja comprar:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
 
 # =========================================================
 # PAGAMENTO
@@ -1376,14 +1277,15 @@ async def receber_email(
             criar_pix,
 
             update.effective_user.id,
-
-            email
-
+            email,
+            context.user_data.get("plano", "mensal")
         )
 
         order_id = resultado.get(
             "id"
         )
+        plano_escolhido = context.user_data.get("plano", "mensal")
+        dados_plano = PLANOS[plano_escolhido]
 
         transactions = resultado.get(
 
@@ -1485,9 +1387,9 @@ async def receber_email(
 
             "✅ <b>PIX GERADO!</b>\n\n"
 
-            "📸 <b>Produto:</b> Pacote de fotos\n"
+            "📦 <b>Plano:</b> " + dados_plano["nome"] + "\n"
 
-            "💰 <b>Valor:</b> R$ 29,99\n\n"
+            "💰 <b>Valor:</b> " + dados_plano["exibicao"] + "\n\n"
 
             "📧 <b>E-mail:</b>\n"
             + email
@@ -1895,7 +1797,7 @@ def main():
     )
 
     print(
-        "Valor: R$ 29,99"
+        "Planos: mensal R$ 29,99 | 3 meses R$ 64,90"
     )
 
     print(
