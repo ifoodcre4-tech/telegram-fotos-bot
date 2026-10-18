@@ -1762,6 +1762,19 @@ def main():
 
     )
 
+    # Seleção dos planos mensal e trimestral
+    app.add_handler(
+
+        CallbackQueryHandler(
+
+            escolher_plano,
+
+            pattern="^plano_(mensal|trimestral)$"
+
+        )
+
+    )
+
     app.add_handler(
 
         CallbackQueryHandler(
