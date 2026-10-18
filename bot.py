@@ -390,7 +390,7 @@ async def receber_email(update, context):
 
     try:
         intent = await asyncio.to_thread(criar_pix, update.effective_user.id, email, plano)
-        intent = intent.to_dict_recursive() if hasattr(intent, "to_dict_recursive") else dict(intent)
+        intent = intent.to_dict() if hasattr(intent, "to_dict") else intent
         action = intent.get("next_action") or {}
         pix = action.get("pix_display_qr_code") or {}
         codigo_pix = pix.get("data")
