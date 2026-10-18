@@ -59,7 +59,6 @@ def criar_pix(chat_id, email, plano="mensal"):
     intent = stripe.PaymentIntent.create(
         amount=dados_plano["centavos"],
         currency="brl",
-        payment_method_types=["pix"],
         payment_method_data={
             "type": "pix",
             "billing_details": {"email": email},
