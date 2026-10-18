@@ -901,10 +901,7 @@ async def start(update, context):
         "Aqui dentro você tem acesso ao conteúdo exclusivo para maiores de 18 anos. 🔥🔞\n\n"
         "Para ter acesso ao grupo exclusivo, basta escolher um dos planos abaixo: 👇"
     )
-    await update.message.reply_text(
-        mensagem,
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    # Envia a mídia primeiro para ela aparecer acima da mensagem e dos planos.
     pasta = os.path.dirname(__file__)
     caminho_gif = os.path.join(pasta, "IMG_0510.mp4")
     caminho_foto = os.path.join(pasta, "inicio.jpg")
@@ -919,6 +916,12 @@ async def start(update, context):
             await update.message.reply_photo(photo=FILE_ID_FOTO_DEMONSTRATIVA)
     except Exception as erro:
         print("Erro ao enviar GIF/vídeo inicial:", erro)
+
+    # Depois envia a mensagem de boas-vindas com os botões dos planos.
+    await update.message.reply_text(
+        mensagem,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 # =========================================================
 # VOLTAR PARA INÍCIO
