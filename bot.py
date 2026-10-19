@@ -46,7 +46,7 @@ LOCK_PAGAMENTOS = threading.Lock()
 # =========================================================
 # CRIAR PIX STRIPE
 # =========================================================
-def criar_pix(chat_id, email, plano="mensal"):
+def criar_pix(chat_id, plano="mensal"):
     if not STRIPE_SECRET_KEY:
         raise RuntimeError("STRIPE_SECRET_KEY não configurada no Render.")
     if plano not in PLANOS:
@@ -54,19 +54,14 @@ def criar_pix(chat_id, email, plano="mensal"):
 
     dados_plano = PLANOS[plano]
 
-    # Pix é pagamento único. O código copia e cola costuma vir em
-    # next_action.pix_display_qr_code.data quando a Stripe o retorna.
+    # Cria o PIX sem exigir nem recolher o e-mail do cliente.
     intent = stripe.PaymentIntent.create(
         amount=dados_plano["centavos"],
         currency="brl",
-        payment_method_data={
-            "type": "pix",
-            "billing_details": {"email": email},
-        },
+        payment_method_data={"type": "pix"},
         confirm=True,
         return_url="https://telegram-fotos-bot-5.onrender.com/",
         description=f"{PRODUTO} - {dados_plano['nome']}",
-        receipt_email=email,
         metadata={
             "chat_id": str(chat_id),
             "plano": plano,
@@ -338,8 +333,8 @@ async def info(update, context):
     await query.answer()
     await query.edit_message_text(
         "ℹ️ <b>COMO FUNCIONA</b>\n\n"
-        "1️⃣ Escolha o pacote.\n\n2️⃣ Informe seu e-mail.\n\n"
-        "3️⃣ Gere o PIX.\n\n4️⃣ Faça o pagamento.\n\n"
+        "1️⃣ Escolha o pacote.\n\n2️⃣ Gere o PIX diretamente, sem informar e-mail.\n\n"
+        "3️⃣ Faça o pagamento.\n\n"
         "5️⃣ Após a confirmação, o bot envia automaticamente seu convite individual para o Grupo VIP.\n\n"
         "🔐 O convite permite apenas 1 entrada.\n\n🔞 Conteúdo exclusivo para maiores de 18 anos.",
         parse_mode="HTML",
@@ -365,31 +360,27 @@ async def pagamento(update, context):
     if not STRIPE_SECRET_KEY:
         await query.message.reply_text("❌ Stripe não está configurada no Render.")
         return
-    context.user_data["aguardando_email"] = True
-    await query.message.reply_text(
-        "📧 <b>E-MAIL PARA PAGAMENTO</b>\n\nDigite seu e-mail abaixo.\n\n"
-        "Exemplo:\n<code>seuemail@gmail.com</code>\n\n"
-        "🔒 O e-mail será utilizado para identificar o pagamento na Stripe.",
-        parse_mode="HTML",
-    )
-
-
-async def receber_email(update, context):
-    if not context.user_data.get("aguardando_email"):
-        return
-    email = (update.message.text or "").strip().lower()
-    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-        await update.message.reply_text("❌ E-mail inválido. Digite um e-mail válido, como seuemail@gmail.com")
-        return
 
     plano = context.user_data.get("plano", "mensal")
     if plano not in PLANOS:
         plano = "mensal"
-    context.user_data["aguardando_email"] = False
-    await update.message.reply_text("⏳ <b>GERANDO PIX...</b>\n\nAguarde alguns segundos.", parse_mode="HTML")
+
+    await gerar_pix_para_usuario(
+        chat_id=query.from_user.id,
+        plano=plano,
+        message=query.message,
+        context=context,
+    )
+
+
+async def gerar_pix_para_usuario(chat_id, plano, message, context):
+    await message.reply_text(
+        "⏳ <b>GERANDO PIX...</b>\n\nAguarde alguns segundos.",
+        parse_mode="HTML",
+    )
 
     try:
-        intent = await asyncio.to_thread(criar_pix, update.effective_user.id, email, plano)
+        intent = await asyncio.to_thread(criar_pix, chat_id, plano)
         intent = intent.to_dict() if hasattr(intent, "to_dict") else intent
         action = intent.get("next_action") or {}
         pix = action.get("pix_display_qr_code") or {}
@@ -399,8 +390,12 @@ async def receber_email(update, context):
         dados_plano = PLANOS[plano]
 
         if not codigo_pix:
-            print("Stripe não retornou código PIX. PaymentIntent:", intent.get("id"), "status:", intent.get("status"), "next_action:", action)
-            await update.message.reply_text(
+            print(
+                "Stripe não retornou código PIX. PaymentIntent:",
+                intent.get("id"), "status:", intent.get("status"),
+                "next_action:", action,
+            )
+            await message.reply_text(
                 "❌ A Stripe não retornou o código PIX para este pagamento.\n"
                 "Nenhum acesso foi liberado. Confira a elegibilidade PIX da conta e os logs do Render."
             )
@@ -410,7 +405,6 @@ async def receber_email(update, context):
             "✅ <b>PIX GERADO!</b>\n\n"
             f"📦 <b>Plano:</b> {dados_plano['nome']}\n"
             f"💰 <b>Valor:</b> {dados_plano['exibicao']}\n\n"
-            f"📧 <b>E-mail:</b>\n{email}\n\n"
             "📋 <b>PIX COPIA E COLA:</b>\n\n"
             f"<code>{codigo_pix}</code>\n\n"
             "👆 Copie o código acima e cole no aplicativo do seu banco.\n\n"
@@ -421,18 +415,21 @@ async def receber_email(update, context):
         if instrucoes:
             botoes.append([InlineKeyboardButton("💳 ABRIR INSTRUÇÕES DO PIX", url=instrucoes)])
         botoes.append([InlineKeyboardButton("📸 VER PACOTE", callback_data="produtos")])
-        await update.message.reply_text(
-            mensagem, parse_mode="HTML",
+        await message.reply_text(
+            mensagem,
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(botoes),
             disable_web_page_preview=True,
         )
         if imagem_qr:
-            await update.message.reply_text(f"QR Code PIX: {imagem_qr}", disable_web_page_preview=False)
-        print("PaymentIntent criado:", intent.get("id"), "plano:", plano, "chat:", update.effective_user.id)
+            await message.reply_text(
+                f"QR Code PIX: {imagem_qr}",
+                disable_web_page_preview=False,
+            )
+        print("PaymentIntent criado:", intent.get("id"), "plano:", plano, "chat:", chat_id)
     except Exception as erro:
-        context.user_data["aguardando_email"] = False
         print("Erro ao criar PIX Stripe:", repr(erro))
-        await update.message.reply_text(
+        await message.reply_text(
             "❌ Não foi possível criar o PIX na Stripe.\n\n"
             "Confira os logs do Render para ver o detalhe do erro. Nenhum acesso foi liberado."
         )
@@ -483,7 +480,6 @@ def main():
     app.add_handler(CommandHandler("ajuda", ajuda))
     app.add_handler(CommandHandler("id", id_grupo))
     app.add_handler(CommandHandler("testevip", testevip))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receber_email))
     app.add_handler(CallbackQueryHandler(produtos, pattern="^produtos$"))
     app.add_handler(CallbackQueryHandler(inicio, pattern="^inicio$"))
     app.add_handler(CallbackQueryHandler(comprar, pattern="^comprar$"))
