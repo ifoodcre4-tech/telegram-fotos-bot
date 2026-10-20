@@ -3,10 +3,13 @@ import json
 import threading
 import asyncio
 import re
+import sqlite3
+import urllib.request
+import urllib.error
+import base64
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 
-import stripe
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -17,8 +20,9 @@ from telegram.ext import (
 # CONFIGURAÇÕES
 # =========================================================
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+PUSHINPAY_TOKEN = os.getenv("PUSHINPAY_TOKEN")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://telegram-fotos-bot-5.onrender.com").rstrip("/")
+DATABASE_PATH = os.getenv("DATABASE_PATH", "pagamentos.db")
 PORT = int(os.getenv("PORT", "10000"))
 
 VALOR_MENSAL = "29.99"
@@ -33,42 +37,116 @@ PLANOS = {
 ID_GRUPO_VIP = -5328427809
 FILE_ID_FOTO_DEMONSTRATIVA = ""
 
-if STRIPE_SECRET_KEY:
-    stripe.api_key = STRIPE_SECRET_KEY
-
-# Mantém uma proteção básica contra eventos repetidos durante a execução.
-# Para persistência entre reinicializações do Render, use um banco de dados.
-PAGAMENTOS_PROCESSADOS = set()
-PAGAMENTOS_EM_PROCESSAMENTO = set()
+# O SQLite mantém os pagamentos pendentes e processados mesmo após reinicialização.
 LOCK_PAGAMENTOS = threading.Lock()
 
+def conectar_banco():
+    conexao = sqlite3.connect(DATABASE_PATH, timeout=30)
+    conexao.execute("PRAGMA journal_mode=WAL")
+    conexao.execute("CREATE TABLE IF NOT EXISTS pagamentos (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, plano TEXT NOT NULL, valor INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'created', processado INTEGER NOT NULL DEFAULT 0)")
+    conexao.commit()
+    return conexao
+
+conexao_inicial = conectar_banco()
+conexao_inicial.close()
+
 
 # =========================================================
-# CRIAR PIX STRIPE
+# CRIAR PIX PUSHIN PAY
 # =========================================================
-def criar_pix(chat_id, plano="mensal"):
-    if not STRIPE_SECRET_KEY:
-        raise RuntimeError("STRIPE_SECRET_KEY não configurada no Render.")
+def requisicao_pushinpay(metodo, caminho, dados=None):
+    if not PUSHINPAY_TOKEN:
+        raise RuntimeError("PUSHINPAY_TOKEN não configurado no Render.")
+    corpo = None if dados is None else json.dumps(dados).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.pushinpay.com.br/api" + caminho,
+        data=corpo,
+        headers={
+            "Authorization": f"Bearer {PUSHINPAY_TOKEN}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        method=metodo,
+    )
+    with urllib.request.urlopen(req, timeout=30) as resposta:
+        return json.loads(resposta.read().decode("utf-8"))
+
+def criar_pix(chat_id, plano):
     if plano not in PLANOS:
         raise ValueError("Plano inválido.")
-
     dados_plano = PLANOS[plano]
+    dados = {"value": dados_plano["centavos"], "webhook_url": PUBLIC_BASE_URL + "/webhook/pushinpay"}
+    transacao = requisicao_pushinpay("POST", "/pix/cashIn", dados)
+    transacao_id = transacao.get("id")
+    codigo_pix = transacao.get("qr_code")
+    if not transacao_id or not codigo_pix:
+        raise RuntimeError("Pushin Pay não retornou o ID e o código PIX esperados.")
+    with conectar_banco() as db:
+        db.execute(
+            "INSERT OR REPLACE INTO pagamentos (id, chat_id, plano, valor, status, processado) VALUES (?, ?, ?, ?, ?, 0)",
+            (transacao_id, str(chat_id), plano, dados_plano["centavos"], transacao.get("status", "created")),
+        )
+    return transacao
 
-    # Cria o PIX sem exigir nem recolher o e-mail do cliente.
-    intent = stripe.PaymentIntent.create(
-        amount=dados_plano["centavos"],
-        currency="brl",
-        payment_method_data={"type": "pix"},
-        confirm=True,
-        return_url="https://telegram-fotos-bot-5.onrender.com/",
-        description=f"{PRODUTO} - {dados_plano['nome']}",
-        metadata={
-            "chat_id": str(chat_id),
-            "plano": plano,
-            "produto": PRODUTO,
-        },
-    )
-    return intent
+
+# =========================================================
+# CONFIRMAR PAGAMENTO NA API PUSHIN PAY
+# =========================================================
+def processar_pagamento_pushinpay(transacao_id):
+    if not transacao_id:
+        return False
+    with LOCK_PAGAMENTOS:
+        with conectar_banco() as db:
+            linha = db.execute(
+                "SELECT chat_id, plano, valor, processado FROM pagamentos WHERE id = ?",
+                (transacao_id,),
+            ).fetchone()
+        if not linha:
+            print("Webhook Pushin Pay ignorado: transação não cadastrada.")
+            return False
+        chat_id, plano, valor_esperado, processado = linha
+        if processado:
+            return True
+        # Não confiamos apenas no corpo do webhook: consultamos o status diretamente na API.
+        status_api = requisicao_pushinpay("GET", f"/transactions/{transacao_id}")
+        if str(status_api.get("id")) != str(transacao_id):
+            print("ID da transação não confere; acesso não liberado.")
+            return False
+        if status_api.get("status") != "paid":
+            with conectar_banco() as db:
+                db.execute("UPDATE pagamentos SET status = ? WHERE id = ?", (str(status_api.get("status", "unknown")), transacao_id))
+            print("Pagamento ainda não confirmado:", transacao_id, status_api.get("status"))
+            return False
+        try:
+            valor_recebido = int(status_api.get("value", 0))
+        except (TypeError, ValueError):
+            valor_recebido = 0
+        if valor_recebido != int(valor_esperado) or plano not in PLANOS or valor_recebido != PLANOS[plano]["centavos"]:
+            print("Valor/plano não confere; acesso não liberado:", transacao_id)
+            return False
+        # Marca como processado antes do envio para evitar duplicação do convite.
+        with conectar_banco() as db:
+            db.execute("UPDATE pagamentos SET status = 'paid', processado = 1 WHERE id = ?", (transacao_id,))
+        try:
+            convite = criar_convite_vip()
+            dados_plano = PLANOS[plano]
+            mensagem = (
+                "🎉 PAGAMENTO CONFIRMADO!\n\n"
+                f"📦 Plano: {dados_plano['nome']}\n"
+                f"💰 Valor: {dados_plano['exibicao']}\n\n"
+                "✅ Seu pagamento foi aprovado!\n\n"
+                "🔐 Seu acesso ao Grupo VIP está liberado.\n\n"
+                "👇 Clique no botão abaixo para entrar no grupo.\n\n"
+                "⚠️ Este convite é individual e permite apenas 1 entrada."
+            )
+            enviar_mensagem_telegram(chat_id, mensagem, convite)
+            print("PAGAMENTO PUSHIN PAY CONFIRMADO:", transacao_id, "chat:", chat_id)
+            return True
+        except Exception:
+            # Reverte para permitir nova tentativa caso o envio do convite falhe.
+            with conectar_banco() as db:
+                db.execute("UPDATE pagamentos SET processado = 0 WHERE id = ?", (transacao_id,))
+            raise
 
 
 # =========================================================
@@ -124,67 +202,8 @@ def enviar_mensagem_telegram(chat_id, mensagem, convite=None):
 
 
 # =========================================================
-# WEBHOOK STRIPE
+# WEBHOOK PUSHIN PAY: verificado na API antes de liberar acesso
 # =========================================================
-def processar_evento_stripe(evento):
-    if evento.get("type") != "payment_intent.succeeded":
-        print("Evento Stripe ignorado:", evento.get("type"))
-        return
-
-    intent = evento.get("data", {}).get("object", {})
-    intent_id = intent.get("id")
-    if not intent_id:
-        print("Webhook sem ID de PaymentIntent.")
-        return
-
-    with LOCK_PAGAMENTOS:
-        if intent_id in PAGAMENTOS_PROCESSADOS or intent_id in PAGAMENTOS_EM_PROCESSAMENTO:
-            print("Pagamento já recebido/em processamento:", intent_id)
-            return
-        PAGAMENTOS_EM_PROCESSAMENTO.add(intent_id)
-
-    try:
-        # Confere os dados do próprio objeto recebido pelo webhook.
-        metadata = intent.get("metadata") or {}
-        chat_id = metadata.get("chat_id")
-        plano = metadata.get("plano")
-        if not chat_id or plano not in PLANOS:
-            print("Metadata inválida no PaymentIntent:", intent_id)
-            return
-
-        esperado = PLANOS[plano]["centavos"]
-        if intent.get("status") != "succeeded":
-            print("PaymentIntent não está succeeded:", intent_id)
-            return
-        if intent.get("currency") != "brl" or int(intent.get("amount_received") or 0) != esperado:
-            print("Valor/moeda não confere; acesso não liberado:", intent_id)
-            return
-        if STRIPE_SECRET_KEY and STRIPE_SECRET_KEY.startswith("sk_live_") and not intent.get("livemode"):
-            print("Pagamento de teste recebido em configuração live; acesso não liberado.")
-            return
-
-        convite = criar_convite_vip()
-        dados_plano = PLANOS[plano]
-        mensagem = (
-            "🎉 PAGAMENTO CONFIRMADO!\n\n"
-            f"📦 Plano: {dados_plano['nome']}\n"
-            f"💰 Valor: {dados_plano['exibicao']}\n\n"
-            "✅ Seu pagamento foi aprovado!\n\n"
-            "🔐 Seu acesso ao Grupo VIP está liberado.\n\n"
-            "👇 Clique no botão abaixo para entrar no grupo.\n\n"
-            "⚠️ Este convite é individual e permite apenas 1 entrada."
-        )
-        enviar_mensagem_telegram(chat_id, mensagem, convite)
-        with LOCK_PAGAMENTOS:
-            PAGAMENTOS_PROCESSADOS.add(intent_id)
-        print("PAGAMENTO STRIPE CONFIRMADO:", intent_id, "chat:", chat_id)
-    except Exception as erro:
-        print("Erro ao processar pagamento Stripe:", erro)
-    finally:
-        with LOCK_PAGAMENTOS:
-            PAGAMENTOS_EM_PROCESSAMENTO.discard(intent_id)
-
-
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -193,46 +212,36 @@ class HealthHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot online")
 
     def do_POST(self):
-        if urlparse(self.path).path != "/webhook/stripe":
+        if urlparse(self.path).path != "/webhook/pushinpay":
             self.send_response(404)
             self.end_headers()
             self.wfile.write(b"Not found")
             return
-
         tamanho = int(self.headers.get("Content-Length", "0"))
-        corpo = self.rfile.read(tamanho)
-        assinatura = self.headers.get("Stripe-Signature")
-
-        if not STRIPE_WEBHOOK_SECRET:
+        try:
+            evento = json.loads(self.rfile.read(tamanho).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(b"Invalid JSON")
+            return
+        transacao_id = evento.get("id") if isinstance(evento, dict) else None
+        if not transacao_id:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(b"Missing transaction id")
+            return
+        # A confirmação é verificada diretamente na API Pushin Pay antes de liberar acesso.
+        try:
+            threading.Thread(target=processar_pagamento_pushinpay, args=(str(transacao_id),), daemon=True).start()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+        except Exception:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(b"Webhook secret missing")
-            return
-
-        try:
-            evento = stripe.Webhook.construct_event(
-                payload=corpo,
-                sig_header=assinatura,
-                secret=STRIPE_WEBHOOK_SECRET,
-            )
-        except ValueError:
-            self.send_response(400)
-            self.end_headers()
-            self.wfile.write(b"Invalid payload")
-            return
-        except stripe.error.SignatureVerificationError:
-            self.send_response(400)
-            self.end_headers()
-            self.wfile.write(b"Invalid signature")
-            return
-
-        threading.Thread(
-            target=processar_evento_stripe, args=(evento,), daemon=True
-        ).start()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"OK")
+            self.wfile.write(b"Processing error")
 
     def log_message(self, format, *args):
         pass
@@ -357,8 +366,8 @@ async def comprar(update, context):
 async def pagamento(update, context):
     query = update.callback_query
     await query.answer()
-    if not STRIPE_SECRET_KEY:
-        await query.message.reply_text("❌ Stripe não está configurada no Render.")
+    if not PUSHINPAY_TOKEN:
+        await query.message.reply_text("❌ A Pushin Pay ainda não está configurada no Render.")
         return
 
     plano = context.user_data.get("plano", "mensal")
@@ -374,33 +383,14 @@ async def pagamento(update, context):
 
 
 async def gerar_pix_para_usuario(chat_id, plano, message, context):
-    await message.reply_text(
-        "⏳ <b>GERANDO PIX...</b>\n\nAguarde alguns segundos.",
-        parse_mode="HTML",
-    )
-
+    await message.reply_text("⏳ <b>GERANDO PIX...</b>\n\nAguarde alguns segundos.", parse_mode="HTML")
     try:
-        intent = await asyncio.to_thread(criar_pix, chat_id, plano)
-        intent = intent.to_dict() if hasattr(intent, "to_dict") else intent
-        action = intent.get("next_action") or {}
-        pix = action.get("pix_display_qr_code") or {}
-        codigo_pix = pix.get("data")
-        imagem_qr = pix.get("image_url_png") or pix.get("image_url_svg")
-        instrucoes = pix.get("hosted_instructions_url")
+        transacao = await asyncio.to_thread(criar_pix, chat_id, plano)
+        codigo_pix = transacao.get("qr_code")
+        qr_base64 = transacao.get("qr_code_base64")
         dados_plano = PLANOS[plano]
-
         if not codigo_pix:
-            print(
-                "Stripe não retornou código PIX. PaymentIntent:",
-                intent.get("id"), "status:", intent.get("status"),
-                "next_action:", action,
-            )
-            await message.reply_text(
-                "❌ A Stripe não retornou o código PIX para este pagamento.\n"
-                "Nenhum acesso foi liberado. Confira a elegibilidade PIX da conta e os logs do Render."
-            )
-            return
-
+            raise RuntimeError("A Pushin Pay não retornou o código PIX.")
         mensagem = (
             "✅ <b>PIX GERADO!</b>\n\n"
             f"📦 <b>Plano:</b> {dados_plano['nome']}\n"
@@ -408,37 +398,30 @@ async def gerar_pix_para_usuario(chat_id, plano, message, context):
             "📋 <b>PIX COPIA E COLA:</b>\n\n"
             f"<code>{codigo_pix}</code>\n\n"
             "👆 Copie o código acima e cole no aplicativo do seu banco.\n\n"
-            "⏳ Após a confirmação do pagamento, o bot enviará automaticamente seu acesso ao Grupo VIP.\n"
+            "⏳ Após a confirmação real do pagamento, o bot enviará automaticamente seu acesso ao Grupo VIP.\n"
             "🔐 O convite será individual."
         )
-        botoes = []
-        if instrucoes:
-            botoes.append([InlineKeyboardButton("💳 ABRIR INSTRUÇÕES DO PIX", url=instrucoes)])
-        botoes.append([InlineKeyboardButton("📸 VER PACOTE", callback_data="produtos")])
-        await message.reply_text(
-            mensagem,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(botoes),
-            disable_web_page_preview=True,
-        )
-        if imagem_qr:
-            await message.reply_text(
-                f"QR Code PIX: {imagem_qr}",
-                disable_web_page_preview=False,
-            )
-        print("PaymentIntent criado:", intent.get("id"), "plano:", plano, "chat:", chat_id)
+        await message.reply_text(mensagem, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📸 VER PACOTE", callback_data="produtos")]]), disable_web_page_preview=True)
+        if qr_base64:
+            try:
+                imagem = qr_base64.split(",", 1)[-1]
+                conteudo = base64.b64decode(imagem)
+                from io import BytesIO
+                arquivo = BytesIO(conteudo)
+                arquivo.name = "pix.png"
+                await message.reply_photo(photo=arquivo, caption="📲 Escaneie este QR Code para pagar.")
+            except Exception as erro_imagem:
+                print("Não foi possível enviar a imagem QR:", erro_imagem)
+        print("PIX Pushin Pay criado:", transacao.get("id"), "plano:", plano, "chat:", chat_id)
     except Exception as erro:
-        print("Erro ao criar PIX Stripe:", repr(erro))
-        await message.reply_text(
-            "❌ Não foi possível criar o PIX na Stripe.\n\n"
-            "Confira os logs do Render para ver o detalhe do erro. Nenhum acesso foi liberado."
-        )
+        print("Erro ao criar PIX Pushin Pay:", repr(erro))
+        await message.reply_text("❌ Não foi possível criar o PIX agora. Tente novamente mais tarde. Nenhum acesso foi liberado.")
 
 
 async def ajuda(update, context):
     await update.message.reply_text(
         "ℹ️ <b>AJUDA</b>\n\n/start — Abrir loja\n/produtos — Ver pacote\n/ajuda — Mostrar ajuda\n\n"
-        "💳 O pagamento é realizado pela Stripe via PIX.\n\n"
+        "💳 O pagamento é realizado pela Pushin Pay via PIX.\n\n"
         "🔐 Após a confirmação, o acesso VIP é enviado automaticamente.",
         parse_mode="HTML",
     )
@@ -468,10 +451,8 @@ async def testevip(update, context):
 def main():
     if not TOKEN:
         raise RuntimeError("TELEGRAM_TOKEN não configurado no Render.")
-    if not STRIPE_SECRET_KEY:
-        raise RuntimeError("STRIPE_SECRET_KEY não configurada no Render.")
-    if not STRIPE_WEBHOOK_SECRET:
-        raise RuntimeError("STRIPE_WEBHOOK_SECRET não configurada no Render.")
+    if not PUSHINPAY_TOKEN:
+        raise RuntimeError("PUSHINPAY_TOKEN não configurado no Render.")
 
     threading.Thread(target=start_server, daemon=True).start()
     app = Application.builder().token(TOKEN).build()
@@ -487,10 +468,10 @@ def main():
     app.add_handler(CallbackQueryHandler(pagamento, pattern="^pagamento$"))
     app.add_handler(CallbackQueryHandler(info, pattern="^info$"))
 
-    print("BOT INICIADO COM STRIPE!")
+    print("BOT INICIADO COM PUSHIN PAY!")
     print("Produto:", PRODUTO)
     print("Planos: mensal R$ 29,99 | trimestral R$ 64,90")
-    print("Webhook: /webhook/stripe")
+    print("Webhook: /webhook/pushinpay")
     app.run_polling()
 
 
