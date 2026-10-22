@@ -217,29 +217,71 @@ class HealthHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"Not found")
             return
-        tamanho = int(self.headers.get("Content-Length", "0"))
-        try:
-            evento = json.loads(self.rfile.read(tamanho).decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
-            self.send_response(400)
-            self.end_headers()
-            self.wfile.write(b"Invalid JSON")
-            return
-        transacao_id = evento.get("id") if isinstance(evento, dict) else None
+
+        # Lê o corpo recebido e registra apenas informações úteis para diagnóstico.
+        tamanho = int(self.headers.get("Content-Length", "0") or "0")
+        corpo_bytes = self.rfile.read(tamanho) if tamanho > 0 else b""
+        corpo = corpo_bytes.decode("utf-8", errors="replace").strip()
+
+        evento = None
+        if corpo:
+            try:
+                evento = json.loads(corpo)
+            except (ValueError, UnicodeDecodeError):
+                evento = None
+
+        # Algumas notificações podem chegar como texto simples; nesse caso,
+        # tenta extrair um UUID de transação sem confiar nele para aprovar pagamento.
+        transacao_id = None
+        if isinstance(evento, dict):
+            # Prioriza transaction_id; "id" pode identificar o próprio evento/webhook.
+            transacao_id = evento.get("transaction_id") or evento.get("transactionId")
+            if not transacao_id and isinstance(evento.get("data"), dict):
+                transacao_id = (
+                    evento["data"].get("transaction_id")
+                    or evento["data"].get("transactionId")
+                    or evento["data"].get("id")
+                )
+            if not transacao_id and isinstance(evento.get("transaction"), dict):
+                transacao_id = evento["transaction"].get("id")
+            if not transacao_id:
+                transacao_id = evento.get("id")
+        elif corpo:
+            encontrado = re.search(
+                r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                corpo,
+            )
+            if encontrado:
+                transacao_id = encontrado.group(0)
+
         if not transacao_id:
+            print(
+                "Webhook Pushin Pay sem ID de transação.",
+                "Content-Type:", self.headers.get("Content-Type"),
+                "Content-Length:", tamanho,
+                "Corpo inicial:", repr(corpo[:300]),
+            )
             self.send_response(400)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.end_headers()
             self.wfile.write(b"Missing transaction id")
             return
-        # A confirmação é verificada diretamente na API Pushin Pay antes de liberar acesso.
+
+        print("Webhook Pushin Pay recebido para transação:", str(transacao_id))
         try:
-            threading.Thread(target=processar_pagamento_pushinpay, args=(str(transacao_id),), daemon=True).start()
+            threading.Thread(
+                target=processar_pagamento_pushinpay,
+                args=(str(transacao_id),),
+                daemon=True,
+            ).start()
             self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.end_headers()
             self.wfile.write(b"OK")
-        except Exception:
+        except Exception as erro:
+            print("Erro ao iniciar processamento do webhook:", repr(erro))
             self.send_response(500)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.end_headers()
             self.wfile.write(b"Processing error")
 
