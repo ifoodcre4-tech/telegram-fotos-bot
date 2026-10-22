@@ -170,9 +170,19 @@ def criar_convite_vip():
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as resposta:
-        resultado = json.loads(resposta.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resposta:
+            resultado = json.loads(resposta.read().decode("utf-8"))
+    except urllib.error.HTTPError as erro:
+        # Mostra o motivo real retornado pela API do Telegram, sem expor o token.
+        detalhe = erro.read().decode("utf-8", errors="replace")
+        print("Erro Telegram createChatInviteLink:", erro.code, detalhe)
+        raise RuntimeError(
+            f"Telegram recusou criar o convite (HTTP {erro.code}). "
+            f"Detalhe: {detalhe[:500]}"
+        ) from erro
     if not resultado.get("ok"):
+        print("Erro Telegram createChatInviteLink:", resultado)
         raise RuntimeError(f"Erro ao criar convite VIP: {resultado}")
     return resultado["result"]["invite_link"]
 
