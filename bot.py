@@ -84,7 +84,7 @@ def criar_pix(chat_id, plano):
     with conectar_banco() as db:
         db.execute(
             "INSERT OR REPLACE INTO pagamentos (id, chat_id, plano, valor, status, processado) VALUES (?, ?, ?, ?, ?, 0)",
-            (transacao_id, str(chat_id), plano, dados_plano["centavos"], transacao.get("status", "created")),
+            (str(transacao_id).strip().lower(), str(chat_id), plano, dados_plano["centavos"], transacao.get("status", "created")),
         )
     return transacao
 
@@ -95,10 +95,12 @@ def criar_pix(chat_id, plano):
 def processar_pagamento_pushinpay(transacao_id):
     if not transacao_id:
         return False
+    # IDs UUID podem chegar em maiúsculas no webhook e ser salvos em minúsculas.
+    transacao_id = str(transacao_id).strip().lower()
     with LOCK_PAGAMENTOS:
         with conectar_banco() as db:
             linha = db.execute(
-                "SELECT chat_id, plano, valor, processado FROM pagamentos WHERE id = ?",
+                "SELECT chat_id, plano, valor, processado FROM pagamentos WHERE lower(id) = lower(?)",
                 (transacao_id,),
             ).fetchone()
         if not linha:
@@ -109,7 +111,7 @@ def processar_pagamento_pushinpay(transacao_id):
             return True
         # Não confiamos apenas no corpo do webhook: consultamos o status diretamente na API.
         status_api = requisicao_pushinpay("GET", f"/transactions/{transacao_id}")
-        if str(status_api.get("id")) != str(transacao_id):
+        if str(status_api.get("id", "")).strip().lower() != transacao_id:
             print("ID da transação não confere; acesso não liberado.")
             return False
         if status_api.get("status") != "paid":
@@ -267,7 +269,9 @@ class HealthHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"Missing transaction id")
             return
 
-        print("Webhook Pushin Pay recebido para transação:", str(transacao_id))
+        # Normaliza UUID para que maiúsculas/minúsculas não impeçam encontrar o pagamento.
+        transacao_id = str(transacao_id).strip().lower()
+        print("Webhook Pushin Pay recebido para transação:", transacao_id)
         try:
             threading.Thread(
                 target=processar_pagamento_pushinpay,
