@@ -34,7 +34,7 @@ PLANOS = {
     "trimestral": {"nome": "3 meses VIP", "valor": VALOR_TRIMESTRAL,
                    "centavos": 6490, "exibicao": "R$ 64,90"},
 }
-ID_GRUPO_VIP = -5328427809
+ID_GRUPO_VIP = -1004369491950
 FILE_ID_FOTO_DEMONSTRATIVA = ""
 
 # O SQLite mantém os pagamentos pendentes e processados mesmo após reinicialização.
