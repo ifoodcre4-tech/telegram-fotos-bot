@@ -1,6 +1,7 @@
 import os
 import json
 import threading
+import time
 import asyncio
 import re
 import sqlite3
@@ -95,16 +96,23 @@ def criar_pix(chat_id, plano):
 def processar_pagamento_pushinpay(transacao_id):
     if not transacao_id:
         return False
-    # IDs UUID podem chegar em maiúsculas no webhook e ser salvos em minúsculas.
     transacao_id = str(transacao_id).strip().lower()
     with LOCK_PAGAMENTOS:
-        with conectar_banco() as db:
-            linha = db.execute(
-                "SELECT chat_id, plano, valor, processado FROM pagamentos WHERE lower(id) = lower(?)",
-                (transacao_id,),
-            ).fetchone()
+        # A Pushin Pay pode chamar o webhook quase imediatamente após criar o PIX,
+        # antes de o registro terminar de ser salvo no SQLite. Tentamos novamente.
+        linha = None
+        for tentativa in range(10):
+            with conectar_banco() as db:
+                linha = db.execute(
+                    "SELECT chat_id, plano, valor, processado FROM pagamentos WHERE lower(id) = lower(?)",
+                    (transacao_id,),
+                ).fetchone()
+            if linha:
+                break
+            if tentativa < 9:
+                time.sleep(1)
         if not linha:
-            print("Webhook Pushin Pay ignorado: transação não cadastrada.")
+            print("Webhook Pushin Pay ignorado após 10 tentativas: transação não cadastrada:", transacao_id)
             return False
         chat_id, plano, valor_esperado, processado = linha
         if processado:
@@ -170,19 +178,9 @@ def criar_convite_vip():
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resposta:
-            resultado = json.loads(resposta.read().decode("utf-8"))
-    except urllib.error.HTTPError as erro:
-        # Mostra o motivo real retornado pela API do Telegram, sem expor o token.
-        detalhe = erro.read().decode("utf-8", errors="replace")
-        print("Erro Telegram createChatInviteLink:", erro.code, detalhe)
-        raise RuntimeError(
-            f"Telegram recusou criar o convite (HTTP {erro.code}). "
-            f"Detalhe: {detalhe[:500]}"
-        ) from erro
+    with urllib.request.urlopen(req, timeout=30) as resposta:
+        resultado = json.loads(resposta.read().decode("utf-8"))
     if not resultado.get("ok"):
-        print("Erro Telegram createChatInviteLink:", resultado)
         raise RuntimeError(f"Erro ao criar convite VIP: {resultado}")
     return resultado["result"]["invite_link"]
 
@@ -279,9 +277,7 @@ class HealthHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"Missing transaction id")
             return
 
-        # Normaliza UUID para que maiúsculas/minúsculas não impeçam encontrar o pagamento.
-        transacao_id = str(transacao_id).strip().lower()
-        print("Webhook Pushin Pay recebido para transação:", transacao_id)
+        print("Webhook Pushin Pay recebido para transação:", str(transacao_id))
         try:
             threading.Thread(
                 target=processar_pagamento_pushinpay,
